@@ -1,0 +1,1 @@
+colorchannelmixer=rr=.55:rg=.35:rb=.10:gr=.55:gg=.35:gb=.10:br=.55:bg=.35:bb=.10,split[a][b];[b]lutyuv=y='if(gt(val,190),(val-190)*4,0)',gblur=sigma=25[g];[a][g]blend=all_mode=screen:all_opacity=0.4,curves=m='0/0 0.1/0.03 0.3/0.25 0.55/0.6 0.85/0.94 1/1',eq=contrast=1.12:saturation=0,vignette=PI/4.2
