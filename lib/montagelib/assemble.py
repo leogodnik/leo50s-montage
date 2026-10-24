@@ -85,7 +85,7 @@ def _graph(p: Project, tl) -> str:
                  f":y='4+1.5*cos(17*t)+1.2*sin(37*t)'[wv]")
     parts.append("[wv][ovl]blend=all_mode=overlay:all_opacity=0.55:shortest=1[flm]")
     post = "[flm]lutyuv=u=128:v=128,noise=c0s=11:c0f=t+u,"
-    if p.letterbox is not None:
+    if p.letterbox:  # None and 0 both mean no bars (drawbox h=0 fills the frame)
         bar = p.letterbox
         post += (f"drawbox=x=0:y=0:w={W}:h={bar}:color=black:t=fill,"
                  f"drawbox=x=0:y={H - bar}:w={W}:h={bar}:color=black:t=fill,")
@@ -104,7 +104,7 @@ def assemble(p: Project) -> Path:
     fcpath = p.build_dir / "assemble.txt"
     fcpath.write_text(_graph(p, tl), encoding="utf-8")
     out = p.out_dir / "video_only.mp4"
-    ffm.run(f"ffmpeg -v error -y {inputs} -filter_complex_script {_q(fcpath)} -map [vout] "
+    ffm.run(f"ffmpeg -v error -y {inputs} -filter_complex_script {_q(fcpath)} -map {_q('[vout]')} "
             f"-r {p.fps} -c:v libx264 -crf {p.output['crf']} -preset medium {_q(out)}")
     return out
 

@@ -1,9 +1,10 @@
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 from montagelib import ffm
-from montagelib.assemble import assemble, film_overlay
+from montagelib.assemble import _graph, assemble, film_overlay
 from montagelib.segments import render_segments
 from montagelib.timeline import frames, timeline
 
@@ -34,8 +35,8 @@ def test_stale_film_is_regenerated(mini_project):
     _, new_total = timeline(p.edl, p.fps)
     assert abs((old_total - new_total) - 1.0) < 1e-6
     # old film is still long enough; make it stale by shortening below the new total
-    ffm.run(f"ffmpeg -v error -y -i {p.out_dir / 'film.mp4'} -frames:v 10 "
-            f"-c:v libx264 -pix_fmt gray {p.out_dir / 'film_short.mp4'}")
+    ffm.run(f"ffmpeg -v error -y -i {shlex.quote(str(p.out_dir / 'film.mp4'))} -frames:v 10 "
+            f"-c:v libx264 -pix_fmt gray {shlex.quote(str(p.out_dir / 'film_short.mp4'))}")
     (p.out_dir / "film_short.mp4").replace(p.out_dir / "film.mp4")
     render_segments(p, only=["s02"])
     out = assemble(p)
@@ -68,3 +69,16 @@ def test_build_cli_edl_prints_total(mini_project):
     assert r.returncode == 0, r.stderr
     _, total = timeline(p.edl, p.fps)
     assert f"total {total:.2f}" in r.stdout.splitlines()
+
+
+def test_letterbox_drawboxes_only_when_positive(mini_project):
+    p = mini_project
+    tl, _ = timeline(p.edl, p.fps)
+    p.letterbox = 138
+    g = _graph(p, tl)
+    assert g.count("drawbox=") == 2
+    assert f"drawbox=x=0:y=0:w={p.width}:h=138" in g
+    assert f"drawbox=x=0:y={p.height - 138}:w={p.width}:h=138" in g
+    for none in (0, None):
+        p.letterbox = none
+        assert "drawbox" not in _graph(p, tl)
