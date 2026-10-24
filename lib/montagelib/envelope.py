@@ -5,7 +5,11 @@ import numpy as np
 from scipy.io import wavfile
 from scipy.signal import find_peaks
 
-FLOOR = -55.0
+FLOOR = -55.0  # display floor of `bars`
+QUIET_ABS = -45.0  # dBFS: at or below this a window is quiet whatever the nearby peak
+CLICK_WINDOWS = 1  # isolated loud 20 ms windows tolerated inside a quiet margin
+SMOOTH = 3  # windows in the moving average before syllable peak picking
+SYL_BELOW = 18  # dB under the loudest syllable of the span: quieter peaks are noise
 EPS = 1e-9
 
 
@@ -39,14 +43,24 @@ def peak_near(times, db, t, radius=0.6) -> float:
     return float(db[sel].max()) if sel.any() else FLOOR - 100
 
 
-def quiet_at(times, db, t, margin=0.05, drop=25) -> bool:
-    """Every window overlapping [t-margin, t+margin] is `drop` dB below the nearby peak."""
-    peak = peak_near(times, db, t)
-    if peak < FLOOR + 10:
-        return True
+def quiet_detail(times, db, t, margin=0.05, drop=25) -> tuple[bool, float, int]:
+    """(quiet, threshold, loud windows) for the windows overlapping [t-margin, t+margin].
+
+    Threshold: `drop` dB below the nearby peak, but never below QUIET_ABS (true silence
+    in a clip is quiet even next to a click). Quiet: at most one window above it, and that
+    one is a click, i.e. its neighbours inside the margin are below the threshold.
+    """
+    thr = max(peak_near(times, db, t) - drop, QUIET_ABS)
     w = _win(times)
-    sel = (times < t + margin - EPS) & (times + w > t - margin + EPS)
-    return bool(np.all(db[sel] <= peak - drop))
+    sel = np.flatnonzero((times < t + margin - EPS) & (times + w > t - margin + EPS))
+    loud = db[sel] > thr
+    n = int(loud.sum())
+    return n == 0 or (n <= CLICK_WINDOWS and not np.any(loud[1:] & loud[:-1])), float(thr), n
+
+
+def quiet_at(times, db, t, margin=0.05, drop=25) -> bool:
+    """See quiet_detail."""
+    return quiet_detail(times, db, t, margin, drop)[0]
 
 
 def onset_before(times, db, t_guess, drop=25, search=1.5) -> float:
@@ -84,9 +98,21 @@ def dip_between(times, db, t0, t1, prominence=2) -> float:
     return float(times[sel[i]])
 
 
-def syllable_peaks(times, db, t0, t1, prominence=6) -> list[float]:
+def smooth(db, n=SMOOTH) -> np.ndarray:
+    """Centered moving average over n windows (edges averaged over what exists)."""
+    k = np.ones(n)
+    return np.convolve(db, k, mode="same") / np.convolve(np.ones(len(db)), k, mode="same")
+
+
+def syllable_peaks(times, db, t0, t1, prominence=6, below=SYL_BELOW) -> list[float]:
+    """Syllable peaks in [t0, t1] on the smoothed envelope: at least `prominence` dB
+    prominent and at most `below` dB under the loudest one (quieter peaks are noise)."""
     sel = np.flatnonzero((times >= t0 - EPS) & (times <= t1 + EPS))
     if len(sel) == 0:
         return []
-    idx, _ = find_peaks(db[sel], prominence=prominence)
-    return [float(times[sel[i]]) for i in idx]
+    s = smooth(db[sel])
+    idx, _ = find_peaks(s, prominence=prominence)
+    if len(idx) == 0:
+        return []
+    top = s[idx].max()
+    return [float(times[sel[i]]) for i in idx if s[i] >= top - below]

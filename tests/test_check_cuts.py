@@ -52,19 +52,76 @@ def test_cut_word_fails(speech_project):
     assert "CUT WORD" in r.stdout
 
 
-def test_tail_word_requires_hard_cut(speech_project):
+def test_tail_word_with_hit_on_last_syllable_fails(speech_project):
+    # "два" runs into the end; the next segment's hit (mid-crossfade, 1.29 s in clip time)
+    # lands on its last syllable (plateau middle ~1.34 s)
     p = speech_project
-    _edit(p, s02={"ss": 0, "d": 1.55}, s03={"trans": "fade"})
+    _edit(p, s02={"ss": 0, "d": 1.55}, s03={"trans": "fade", "ov": 0.5})
     r = _check(p)
     assert r.returncode == 1, r.stdout + r.stderr
-    assert "needs cut" in r.stdout
-    assert "end not quiet" in r.stdout
-    # the hard cut waives only the END: a start inside a word is still a problem
+    assert "hit on last syllable: next s03" in r.stdout
+    # the waiver covers only the END: a start inside a word is still a problem
     _edit(p, s02={"ss": 0.6, "d": 0.95}, s03={"trans": "cut", "hit": None})
     r = _check(p)
     assert r.returncode == 1, r.stdout + r.stderr
     assert "tail: hard cut ok" in r.stdout
     assert "start not quiet" in r.stdout
+
+
+def test_tail_word_with_fade_and_no_hit_passes(speech_project):
+    # v6 s07 -> s08: the last word runs into a dissolve without a hit. The renderer does
+    # not fade the outgoing speech on a visual transition, so nothing masks the word.
+    p = speech_project
+    _edit(p, s02={"ss": 0, "d": 1.55}, s03={"trans": "fade", "ov": 0.5, "hit": None})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "tail: next s03 fade, no hit" in r.stdout
+
+
+def _decaying(p):
+    # "один" 0.5-0.8; "два" peaks at 1.25 and decays (still -21 dB at 1.49), like "паз!"
+    import numpy as np
+    from scipy.io import wavfile
+    sr = 48000
+    t = np.arange(int(2.0 * sr)) / sr
+    amp = np.where((t >= 0.5) & (t < 0.8), 0.5, 0.0)
+    amp += np.where(t >= 1.2, 0.5 * np.exp(-np.clip(t - 1.25, 0, None) / 0.1), 0.0)
+    amp[(t >= 1.2) & (t < 1.25)] = 0.5
+    wavfile.write(p.wav_dir / "a.wav", sr, (amp * np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16))
+
+
+def test_tail_word_with_hit_after_last_syllable_passes(speech_project):
+    # v6 s08 -> s09: a hard cut whose hit lands 0.2 s after the last syllable peak
+    p = speech_project
+    _decaying(p)
+    _edit(p, s02={"ss": 0, "d": 1.55})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "tail: next s03 hit" in r.stdout and "after last syllable" in r.stdout
+
+
+def test_sound_running_on_to_the_end_is_a_tail(speech_project):
+    # v6 s11: whisper ends "два" at 1.30, but the sound never goes quiet before the end
+    p = speech_project
+    _clip(p, 2.5, [(0.5, 0.8), (1.2, 2.0)])
+    _words(p, [("один", 0.5, 0.8), ("два", 1.2, 1.3)])
+    _edit(p, s02={"ss": 0, "d": 1.9})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "end not quiet" not in r.stdout
+    assert "tail: sound runs on to the end" in r.stdout
+
+
+def test_end_is_checked_on_the_frame_grid(speech_project):
+    # d 1.48 renders as 36 frames = 1.50 s; whisper's "два" ends at 1.52, so the raw end
+    # 1.48 would look like a cut word while the rendered end is after it
+    p = speech_project
+    _words(p, [("один", 0.5, 0.8), ("два", 1.2, 1.52)])
+    _edit(p, s02={"ss": 0, "d": 1.48}, s03={"hit": None})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "0.00- 1.50" in r.stdout
+    assert "CUT WORD" not in r.stdout
 
 
 def test_missing_wav_is_loud_failure(speech_project):

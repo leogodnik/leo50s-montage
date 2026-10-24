@@ -68,3 +68,43 @@ def test_dip_between_prefers_last_dip():
     db[40] = -20.0
     assert abs(dip_between(times, db, 0.2, 0.9) - 0.80) < 1e-9
     assert abs(dip_between(times, db, 0.2, 0.7) - 0.40) < 1e-9
+
+
+def _grid(n=100, base=-52.0):
+    return np.arange(n) * 0.02, np.full(n, base)
+
+
+def test_quiet_absolute_floor_ignores_nearby_click():
+    # s04 of the v6 master: true silence at -52 dBFS, one -39 dB click 0.1 s before the cut;
+    # relative to that click the threshold would be -64, below the clip's own noise
+    times, db = _grid()
+    db[54] = -39.0
+    assert quiet_at(times, db, 1.2)
+
+
+def test_quiet_tolerates_one_loud_window_not_two():
+    # speech nearby sets the threshold to -45; one window at -44 inside the margin is a click
+    times, db = _grid(base=-50.0)
+    db[25:35] = -20.0
+    db[50] = -44.0
+    assert quiet_at(times, db, 1.0)
+    db[49] = -44.0  # two adjacent loud windows are sound, not a click
+    assert not quiet_at(times, db, 1.0)
+
+
+def test_quiet_floor_does_not_hide_quiet_speech():
+    # a soft clip: speech at -40 dBFS around the cut is not silence
+    times, db = _grid(base=-60.0)
+    db[45:56] = -40.0
+    assert not quiet_at(times, db, 1.0)
+
+
+def test_syllable_peaks_smoothed_and_noise_floored():
+    # one syllable with a one-window notch (raw find_peaks splits it in two) and a noise
+    # bump 28 dB below the loudest syllable: one syllable
+    times, db = _grid(50, base=-60.0)
+    db[10:16] = -12.0
+    db[15] = -19.0
+    db[16:21] = -13.0
+    db[35:38] = -40.0
+    assert len(syllable_peaks(times, db, 0.0, 1.0)) == 1

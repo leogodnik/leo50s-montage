@@ -69,7 +69,7 @@ Id взяты из `trailer-build/references/example-trailer.json`, подста
 ## Дакинг под речь
 
 Музыка уходит под реплику со скатами 0.25 с. 0.5 в тихом акте, 0.4 под остинато,
-0.2–0.1 если verify_mix пишет `syllable lost` (решает `speech-safe-cuts`).
+0.2–0.1 если verify_mix пишет `syllable masked` без удара рядом (решает `speech-safe-cuts`).
 
 ```json
 {"edl": [
