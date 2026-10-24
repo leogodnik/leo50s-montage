@@ -1,0 +1,55 @@
+{
+  "clips": {
+    "c1": "../Pizda.mp4",
+    "c2": "../gemini_generated_video_4471ee0d.mp4",
+    "c3": "../gemini_generated_video_6c44611d.mp4",
+    "c4": "../gemini_generated_video_7d3482cb.mp4",
+    "c5": "../gemini_generated_video_aee2631e.mp4",
+    "c6": "../gemini_generated_video_d6940d17.mp4",
+    "c7": "../gemini_generated_video_f4c6042c.mp4"
+  },
+  "fps": 24,
+  "size": [1920, 1080],
+  "letterbox": 138,
+  "look": "noir",
+  "grade": "gammas.txt",
+  "output": {"name": "Землянка_трейлер", "crf": 16, "preview_height": 720},
+  "edl": [
+    {"id": "s00", "kind": "black", "d": 1.0},
+    {"id": "s0a", "kind": "card", "lines": [["ПО МОТИВАМ ПЬЕСЫ", 40], ["ВЛАДИМИРА СОРОКИНА", 58]], "text": "по мотивам", "d": 4.0, "ov": 0.5},
+    {"id": "s01", "kind": "clip", "src": "c2", "ss": 0.0, "d": 5.0, "ov": 0.6, "fx": ["push"], "fade_in": 1.5},
+    {"id": "s02", "kind": "card", "text": "ОНИ ЖДАЛИ ПРИКАЗА", "d": 3.0, "ov": 0.7, "hit": "boom"},
+    {"id": "s03", "kind": "clip", "src": "c7", "ss": 0.0, "d": 5.0, "ov": 0.3, "fx": ["push"], "speech": true},
+    {"id": "s04", "kind": "clip", "src": "c5", "ss": 1.4, "d": 5.8, "ov": 0.6, "fx": ["push"], "speech": true},
+    {"id": "s05", "kind": "card", "text": "ОНИ ЧИТАЛИ ПРАВДУ", "d": 3.0, "ov": 0.7, "hit": "boom"},
+    {"id": "s06", "kind": "clip", "src": "c3", "ss": 4.2, "d": 3.0, "ov": 0.7, "fx": ["push"], "speech": true},
+    {"id": "s07", "kind": "clip", "src": "c6", "ss": 1.4, "d": 1.8, "trans": "cut", "fx": ["push"], "hit": "hit", "speech": true},
+    {"id": "s08", "kind": "clip", "src": "c1", "ss": 0.9, "d": 7.9, "ov": 0.5, "fx": ["push"], "speech": true},
+    {"id": "s09", "kind": "clip", "src": "c6", "ss": 3.2, "d": 2.58, "trans": "cut", "fx": ["shake"], "hit": "hit", "speech": true},
+    {"id": "s10", "kind": "card", "text": "ПРИКАЗ ПРИШЁЛ", "d": 2.5, "ov": 0.3, "hit": "braam"},
+    {"id": "s11", "kind": "clip", "src": "c4", "ss": 0.9, "d": 5.2, "ov": 0.2, "trans": "fadewhite", "fx": ["shake"], "shake": 0.3, "hit": "hit", "speech": true, "duck": 0.4},
+    {"id": "s12", "kind": "clip", "src": "c6", "ss": 1.30, "d": 0.84, "trans": "cut", "fx": ["shake"], "shake": 0.3, "speech": true, "duck": 0.2, "amb": 2.0},
+    {"id": "s13", "kind": "clip", "src": "c4", "ss": 6.0, "d": 2.5, "trans": "cut", "fx": ["shake"], "shake": 0.3},
+    {"id": "s14", "kind": "clip", "src": "c1", "ss": 4.88, "d": 1.05, "trans": "cut", "fx": ["shake"], "shake": 0.3, "hit": "hit"},
+    {"id": "s15", "kind": "clip", "src": "c4", "ss": 8.6, "d": 2.0, "ov": 0.2, "trans": "fadewhite", "fx": ["shake"], "shake": 0.3, "hit": "hit"},
+    {"id": "s16", "kind": "clip", "src": "c7", "ss": 5.95, "d": 1.25, "trans": "cut", "fx": ["shake"], "shake": 0.3, "hit": "hit"},
+    {"id": "s17", "kind": "clip", "src": "c4", "ss": 16.35, "d": 1.2, "ov": 0.2, "trans": "fadewhite", "fx": ["shake"], "shake": 0.3, "hit": "hit"},
+    {"id": "s18", "kind": "clip", "src": "c3", "ss": 8.72, "d": 0.85, "trans": "cut", "fx": ["shake"], "shake": 0.3, "hit": "hit"},
+    {"id": "s19", "kind": "clip", "src": "c4", "ss": 18.2, "d": 4.0, "trans": "cut", "fx": ["slow4", "push"], "hit": "riser"},
+    {"id": "s20", "kind": "white", "d": 1.5, "ov": 0.6, "hit": {"type": "explosion", "whistle_from": "s19"}},
+    {"id": "s21", "kind": "title", "text": "ZЕМЛЯНКА", "d": 5.0, "trans": "cut", "style": "painted", "bg": "black", "hit": "titleboom"},
+    {"id": "s22", "kind": "card", "text": "СКОРО", "d": 3.0, "ov": 0.8, "small": true},
+    {"id": "s23", "kind": "black", "d": 1.5, "ov": 0.8}
+  ],
+  "score": {
+    "layers": [
+      {"instrument": "drone", "from": "s00", "to": "s20", "ramp": [["s00", 0.09], ["s02", 0.11], ["s07", 0.17], ["s11", 0.24], ["s20", 0.24]], "attack": 3.0, "release": 0.4},
+      {"instrument": "drone", "from": "s21", "to": "end", "gain": 0.16, "attack": 0.05, "release": 2.5},
+      {"instrument": "heartbeat", "from": "s02", "to": "s07", "params": {"bpm": 58}, "gain": 0.3, "attack": 0, "release": 0},
+      {"instrument": "heartbeat", "from": "s07", "to": "s10", "params": {"bpm": 84}, "gain": 0.5, "attack": 0, "release": 0},
+      {"instrument": "ticks", "from": "s07", "to": "s10", "params": {"gap": 0.5}, "gain": 0.18, "trim_end": 0.35, "attack": 0, "release": 0},
+      {"instrument": "ostinato", "from": "s11", "to": "s19", "gain": 0.28, "attack": 0.2, "release": 0.3}
+    ],
+    "hits": {"boom": 0.75, "braam": 0.7, "hit": 0.55, "titleboom": 0.7, "explosion": 1.0, "riser": 0.3}
+  }
+}
