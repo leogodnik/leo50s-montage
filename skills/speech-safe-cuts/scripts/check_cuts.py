@@ -21,6 +21,9 @@ them. Such a word keeps the tail rules above. A word straddling the start is alw
 A loud end must not cut into the next word: a word whisper starts within 0.4 s after the
 end needs its envelope onset (or, in continuous speech, the dip before it) at the end
 or later ("end cuts into next word").
+A clip segment without speech is not checked, but a word straddling its start or end
+(same rule) gets the note "ambience: word cut «w» s-e at start|end, amb X" unless its
+ambience is muted (amb 0) or it is slow motion (no ambience).
 """
 import argparse
 import pathlib
@@ -32,6 +35,7 @@ from montagelib.envelope import (dip_between, hit_on_syllable, onset_before,  # 
                                  peak_near, quiet_at, quiet_detail, read_mono, rms_db,
                                  syllable_peaks)
 from montagelib.project import ProjectError, load_project  # noqa: E402
+from montagelib.score import DEFAULT_MASTER  # noqa: E402
 from montagelib.timeline import snap, timeline, visual_start  # noqa: E402
 from montagelib.words import inside, load_words, straddling  # noqa: E402
 
@@ -82,13 +86,34 @@ def _next_onset(times, db, ws, w):
     return dip_between(times, db, t0, w.s + 0.05), DIP_SLACK
 
 
+def _ambience_note(s, p, words, master):
+    """A non-speech clip whose ambience bed cuts a word: a note, not a problem."""
+    amb = s.amb if s.amb is not None else master["ambience_default"]
+    if s.src not in words or amb == 0 or any(f.startswith("slow") for f in s.fx):
+        return None
+    a, b = s.ss, s.ss + snap(s.d, p.fps)
+    notes = []
+    for w in straddling(words[s.src], a, b, TOL):
+        where = "start" if w.s + TOL < a < w.e - TOL else "end"
+        notes.append(f"ambience: word cut «{w.w}» {w.s}-{w.e} at {where}, amb {amb:g}")
+    if not notes:
+        return None
+    return f"{s.id} {s.src} {a:5.2f}-{b:5.2f} no speech" + "".join(f"  ({n})" for n in notes)
+
+
 def check(p, words):
     """Yield (segment, table line, problem count)."""
     tl, _ = timeline(p.edl, p.fps)
     starts = {seg.id: st for seg, st in tl}
     envs = {}
+    master = {**DEFAULT_MASTER, **p.score.get("master", {})}
     for i, s in enumerate(p.edl):
-        if s.kind != "clip" or not s.speech:
+        if s.kind == "clip" and not s.speech:
+            note = _ambience_note(s, p, words, master)
+            if note:
+                yield s, note, 0
+            continue
+        if s.kind != "clip":
             continue
         a, b = s.ss, s.ss + snap(s.d, p.fps)  # the end the render produces
         if s.src not in words:

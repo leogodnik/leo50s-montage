@@ -338,3 +338,23 @@ def test_late_word_with_sound_before_its_whisper_end_is_a_cut_word(speech_projec
     r = _check(p)
     assert r.returncode == 1, r.stdout + r.stderr
     assert "CUT WORD" in r.stdout and "whisper end late" not in r.stdout
+
+
+def test_word_cut_in_a_non_speech_segment_is_an_ambience_note(speech_project):
+    p = speech_project
+    _edit(p, s02={"ss": 0, "d": 1.9}, s03={"src": "a", "ss": 0.6, "d": 0.8})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "problems: 0" in r.stdout
+    line = next(x for x in r.stdout.splitlines() if x.startswith("s03"))
+    assert "(ambience: word cut «один» 0.5-0.8 at start, amb 0.35)" in line
+    assert "(ambience: word cut «два» 1.2-1.5 at end, amb 0.35)" in line
+    assert "<--" not in line
+
+
+def test_muted_non_speech_segment_gets_no_ambience_note(speech_project):
+    p = speech_project
+    _edit(p, s02={"ss": 0, "d": 1.9}, s03={"src": "a", "ss": 0.6, "d": 0.8, "amb": 0})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "ambience:" not in r.stdout

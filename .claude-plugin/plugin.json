@@ -1,7 +1,7 @@
 {
   "name": "leo50s-montage",
   "description": "Кинематографический монтаж из AI-клипов: единый грейд, трейлер по монтажному листу, целые реплики, синтезированная музыка",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Leonid Godnik",
     "email": "leonid.godnik@gmail.com"

@@ -313,3 +313,20 @@ ssc-cal (`/private/tmp/claude-501/-Users-leogodnik---------/2c671f80-a907-4add-8
 ## Вердикт: принято
 
 Плагин воспроизводит v6: 1594 кадра, монтаж, титры и грейд те же, звук совпадает с оригиналом до сэмпла. Проект и `example-trailer.json` — точная v6. После калибровки чекеров (§§ 8–9) обе проверки речи на ней на нуле: `check_cuts` `problems: 0`, `verify_mix` `problems: 0`. Настоящие дефекты по-прежнему ловятся: обрезанное «Тяните» с 1.68, «Тяните» с `cut` + `hit` на ещё звучащем «-те», `fadewhite` после реплики, конец на начале следующего слова, обнулённый, накрытый или засыпанный слог.
+
+## 0.1.1
+
+Финальная волна исправлений после общего ревью: устаревшие файлы сборки дают ошибку, а не короткий мастер; `shake`/`push` режутся из кадра 1280×720 при любом размере исходника; у сегментов без речи `check_cuts` отмечает обрывки слов в фоне; свой лук ищется от папки `trailer.json`.
+
+Пересборка на исходных клипах плагином 0.1.1 (ffmpeg 8.0.1), из `/Users/leogodnik/Землянка/_сборка`: `build.py trailer.json segments` (все 25, кадры совпали), `assemble`, `audio`, `mux` — каждый шаг exit 0.
+
+| Проверка | Результат |
+|---|---|
+| `cmp out/score.wav out/v6_as_is/score.wav` | `cmp: identical` (звук совпал до байта) |
+| `count_frames(out/Землянка_трейлер.mp4)` | 1594 (`video_only.mp4` тоже 1594) |
+| `check_cuts.py trailer.json` | exit 0, `problems: 0`; новые пометки `s14 c1 4.88- 5.92 no speech (ambience: word cut «Сморк!» 5.5-6.18 at end, amb 0.35)`, `s18 c3 8.72- 9.55 no speech (ambience: word cut «на» 8.62-8.78 at start, amb 0.35)` |
+| `verify_mix.py trailer.json` | exit 0, `problems: 0` |
+| вставка `scale=1280:720:flags=lanczos` перед грейдом | framemd5 сегментов s01 (`push`), s09 (`shake`), s19 (`slow4`+`push`), s05 до и после правки идентичны |
+| ssc-регрессия (`s01 ss 1.68`) | exit 1, `problems: 4` (`CUT WORD`, `start cuts into a word`, `needs cut or fade`, `hit on last syllable`) |
+
+Корневые `build.py`, `gammas.txt`, `words.json`, `score.wav` и `out/v6_as_is/score.wav` не менялись (md5 до и после совпали). Обе калибровки и регрессия закреплены медленным тестом `tests/test_calibration_v6.py`.

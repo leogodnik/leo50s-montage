@@ -62,6 +62,9 @@ def main(argv):
             return 1
         print(f"{f.name}  {m['duration']:.2f}s  {m['w']}x{m['h']}  {m['fps']:.3g}fps  "
               f"mean {mean} dB  max {mx} dB")
+        if (m["w"], m["h"]) != (1280, 720):
+            print(f"warning: {f.name}: not 1280x720 ({m['w']}x{m['h']}); segments with "
+                  f"shake/push scale it to 1280x720 first")
     print("contact sheets in", out)
     return 0
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from .grade import parse_grade
+from .looks import load_look, resolve_look
 
 KINDS = ("clip", "card", "title", "black", "white")
 TRANSITIONS = ("fade", "fadewhite", "cut")
@@ -325,11 +326,23 @@ def load_project(path: Path) -> Project:
     edl = [s for i, e in enumerate(raw_edl)
            if (s := _parse_segment(i, e, aliases, ids, problems)) is not None]
 
+    look = data.get("look", "noir")
+    if not isinstance(look, str) or not look:
+        problems.append(f"look: must be a look name or a path to a .txt, got {look!r}")
+        look = "noir"
+    else:
+        try:
+            load_look(look, base)
+            if "/" in look or look.endswith(".txt"):
+                look = str(resolve_look(look, base))  # absolute: works from any cwd
+        except FileNotFoundError as ex:
+            problems.append(f"look: {ex}")
+
     score = data.get("score", {})
     _check_score(score, ids, problems)
 
     if problems:
         raise ProjectError(problems)
     return Project(path=path, build_dir=base, clips=clips, fps=fps, width=size[0],
-                   height=size[1], letterbox=letterbox, look=data.get("look", "noir"),
+                   height=size[1], letterbox=letterbox, look=look,
                    grade=grade, fonts=fonts, edl=edl, score=score, output=output)

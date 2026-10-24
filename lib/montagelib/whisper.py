@@ -42,7 +42,9 @@ def transcribe(paths: list[Path], lang="ru", model="medium", words=True) -> dict
     """{str(path): [{text, s, e, words: [{w, s, e}]}]} per input media file."""
     py = python()
     if not py.exists():
-        raise WhisperError("venv-whisper not found, run: bash scripts/setup_env.sh")
+        root = Path(__file__).resolve().parents[2]
+        raise WhisperError(f"venv-whisper not found, run: "
+                           f"bash ${{CLAUDE_PLUGIN_ROOT:-{root}}}/scripts/setup_env.sh")
     with tempfile.TemporaryDirectory() as tmp:
         raws = []
         for i, src in enumerate(paths):
@@ -54,4 +56,7 @@ def transcribe(paths: list[Path], lang="ru", model="medium", words=True) -> dict
                            capture_output=True, text=True)
     if r.returncode != 0:
         raise WhisperError(f"whisper failed:\n{r.stderr[-2000:]}")
-    return {str(p): segs for p, segs in zip(paths, json.loads(r.stdout.splitlines()[-1]))}
+    lines = r.stdout.strip().splitlines()
+    if not lines:
+        raise WhisperError(f"whisper gave no output:\n{r.stderr[-2000:]}")
+    return {str(p): segs for p, segs in zip(paths, json.loads(lines[-1]))}

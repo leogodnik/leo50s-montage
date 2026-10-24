@@ -23,4 +23,10 @@ if [ "$WHISPER" = 1 ]; then
   fi
   "$UV" pip install -q --python "$HOME_DIR/venv-whisper/bin/python" faster-whisper
   echo "venv-whisper: $HOME_DIR/venv-whisper"
+  # the first transcription would otherwise download the model (~1.5 GB) inside a shell timeout
+  if "$HOME_DIR/venv-whisper/bin/python" -c "from faster_whisper import WhisperModel; WhisperModel('medium', device='cpu', compute_type='int8')"; then
+    echo "whisper model: medium ready"
+  else
+    echo "warning: whisper model 'medium' not downloaded; the first transcription will fetch it" >&2
+  fi
 fi

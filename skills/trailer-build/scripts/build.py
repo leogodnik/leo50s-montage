@@ -76,11 +76,16 @@ def main(argv):
     path, step, ids = argv[0], argv[1], argv[2:]
     try:
         p = load_project(path)
+        unknown = [i for i in ids if i not in {s.id for s in p.edl}]
+        if unknown:
+            print(f"error: unknown segment id(s): {' '.join(unknown)}", file=sys.stderr)
+            return 1
         for d in (p.seg_dir, p.cards_dir, p.out_dir, p.wav_dir):
             d.mkdir(parents=True, exist_ok=True)
         for name in (ALL if step == "all" else (step,)):
             globals()[f"step_{name}"](p, ids)
-    except (ProjectError, SegmentError, ffm.FfmpegError, FileNotFoundError) as e:
+    except (ProjectError, SegmentError, asm.StaleFileError, ffm.FfmpegError,
+            FileNotFoundError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0

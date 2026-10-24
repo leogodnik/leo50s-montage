@@ -119,3 +119,25 @@ def test_explosion_whistle_skipped_when_too_short(capsys):
 def test_explosion_without_whistle_from():
     from montagelib.score import explosion_window
     assert explosion_window(_white(None), 10.0, {"s20": 10.3}) == (None, 10.3)
+
+
+def test_explosion_honours_the_hit_offset():
+    from montagelib.score import explosion_window
+    seg = _white()
+    seg.hit["offset"] = 0.2
+    T = {"s19": 53.625, "s20": 57.354}
+    ws, tx = explosion_window(seg, 57.042, T)
+    assert tx == pytest.approx(57.042 + 0.3 + 0.2)
+    assert ws == pytest.approx(53.725)
+
+
+def test_riser_on_a_very_short_segment_is_clamped():
+    from montagelib.project import Segment
+    from montagelib.score import _hit
+    from montagelib.synth import SR
+    seg = Segment(id="r", kind="clip", src="a", d=0.12,
+                  hit={"type": "riser", "gain": None, "offset": 0, "whistle_from": None})
+    music, hits = np.zeros(SR), np.zeros(SR)
+    _hit(music, hits, seg, 0.2, {"r": 0.2}, {})
+    nz = np.nonzero(music)[0]
+    assert len(nz) and (nz[-1] - nz[0]) / SR == pytest.approx(0.1, abs=0.01)

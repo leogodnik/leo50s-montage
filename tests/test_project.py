@@ -169,3 +169,26 @@ def test_known_params_are_valid(tmp_path):
         d["score"]["layers"].append({"instrument": "ostinato", "from": "s01", "to": "end",
                                      "params": {"bpm": 120, "pattern": [55.0]}})
     assert len(load_project(_write(tmp_path, m)).score["layers"]) == 2
+
+
+CUSTOM = "hue=s=0,curves=preset=darker"
+
+
+def test_custom_look_resolves_against_the_build_dir(tmp_path, monkeypatch):
+    from montagelib.looks import load_look
+    from montagelib.segments import segment_cmd
+    (tmp_path / "looks").mkdir()
+    (tmp_path / "looks" / "custom.txt").write_text(CUSTOM + "\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)  # not the build dir
+    assert load_look("looks/custom.txt", base_dir=tmp_path) == CUSTOM
+    pr = load_project(_write(tmp_path, lambda d: d.update(look="looks/custom.txt")))
+    assert pr.look == str(tmp_path / "looks" / "custom.txt")
+    assert f"eq=gamma=1.0:contrast=1.0,{CUSTOM}" in segment_cmd(pr.by_id("s02"), pr)
+
+
+def test_missing_look_is_a_project_problem(tmp_path):
+    with pytest.raises(ProjectError) as ex:
+        load_project(_write(tmp_path, lambda d: d.update(look="looks/nope.txt")))
+    assert any(pr.startswith("look: look not found: looks/nope.txt") for pr in ex.value.problems)

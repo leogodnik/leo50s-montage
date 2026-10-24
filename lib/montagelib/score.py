@@ -38,10 +38,10 @@ def _layer(music, layer, T):
 def explosion_window(seg, start, T):
     """(whistle start or None, white moment) of an explosion hit.
 
-    The white moment is start + 0.3; the bomb whistle runs from the visual start of
-    `whistle_from` + 0.1 up to exactly that moment, and is skipped if there is no room.
+    The white moment is start + 0.3 (+ hit.offset); the bomb whistle runs from the visual
+    start of `whistle_from` + 0.1 up to exactly that moment, and is skipped if there is no room.
     """
-    tx = start + 0.3  # the moment the frame goes white
+    tx = start + 0.3 + (seg.hit.get("offset") or 0)  # the moment the frame goes white
     wf = seg.hit.get("whistle_from")
     if wf is None:
         return None, tx
@@ -59,7 +59,7 @@ def _hit(music, hits, seg, start, T, gains):
     g = h["gain"] if h["gain"] is not None else gains.get(kind, DEFAULT_HIT_GAINS[kind])
     t0 = T[seg.id] + h["offset"]
     if kind == "riser":
-        add(music, riser(seg.d - 0.15), t0, g)
+        add(music, riser(max(seg.d - 0.15, 0.1)), t0, g)
     elif kind == "braam":
         add(hits, EVENTS["braam"](), t0 - 0.15, g)
         add(hits, EVENTS["boom"](), t0, 0.5)

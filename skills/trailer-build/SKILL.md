@@ -9,16 +9,16 @@ description: Используется, когда из набора клипов
 
 В командах ниже `PY` = `${LEO50S_HOME:-$HOME/.cache/leo50s-montage}/venv/bin/python`, `D` = папка этого навыка (печатается при загрузке), `T` = путь к `trailer.json`. Shell не хранит переменные между вызовами: подставляй полные пути в каждую команду. Нет venv ⇒ `bash $D/../../scripts/setup_env.sh` (с whisper: он нужен `speech-safe-cuts`).
 
-**REQUIRED SUB-SKILL:** `speech-safe-cuts` — до любого `ss`/`d` сегмента с речью и до ответа, что реплика целая.
-**REQUIRED SUB-SKILL:** `match-grade` — до первого рендера сегментов.
-Раздел `score` и удары `hit` — навык `synth-score`.
+**REQUIRED SUB-SKILL:** `leo50s-montage:speech-safe-cuts` — до любого `ss`/`d` сегмента с речью и до ответа, что реплика целая.
+**REQUIRED SUB-SKILL:** `leo50s-montage:match-grade` — до первого рендера сегментов.
+Раздел `score` и удары `hit` — навык `leo50s-montage:synth-score`.
 
 ## Поток
 
 1. Разведка: `$PY $D/scripts/probe_clips.py <папка клипов>` → раскадровки посмотри через Read.
 2. Черновик: `<проект>/_сборка/trailer.json` с `clips` (`../<файл>.mp4`), `look` и `edl` из одного `black` (образец — `references/project-format.md`, «Черновик»). Затем `build.py $T wav`: без него нет огибающих.
-3. `speech-safe-cuts`: таймкоды слов (готовый `words.json` при тех же клипах не пересчитывай), огибающие слов на границах.
-4. `match-grade`: `gammas.txt` и `"grade"` в `T`.
+3. `leo50s-montage:speech-safe-cuts`: таймкоды слов (готовый `words.json` при тех же клипах не пересчитывай), огибающие слов на границах.
+4. `leo50s-montage:match-grade`: `gammas.txt` и `"grade"` в `T`.
 5. Настоящий монтажный лист вместо черновика: дуга — `references/dramaturgy.md` (тизер 15–25 с — «Короткая дуга»), поля — `references/project-format.md`. «Секунд на N» не сходится с целыми репликами ⇒ реплики целиком, в сдаче настоящая длина.
 6. Сборка, один шаг за вызов: `$PY $D/scripts/build.py $T <шаг>`, по порядку `edl`, `wav`, `cards`, `segments`, `film`, `assemble`, `audio`, `mux`, `preview`. `edl` печатает таймлайн и `total`, `segments` сверяет кадры.
 7. Чеклист, сдача.

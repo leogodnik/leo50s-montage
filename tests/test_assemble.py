@@ -1,11 +1,15 @@
 import shlex
 import subprocess
 import sys
+import wave
 from pathlib import Path
 
+import pytest
+
+from montagelib import assemble as asm
 from montagelib import ffm
 from montagelib.assemble import _graph, assemble, film_overlay
-from montagelib.segments import render_segments
+from montagelib.segments import SegmentError, render_segments
 from montagelib.timeline import frames, timeline
 
 BUILD = Path(__file__).resolve().parents[1] / "skills" / "trailer-build" / "scripts" / "build.py"
@@ -82,3 +86,55 @@ def test_letterbox_drawboxes_only_when_positive(mini_project):
     for none in (0, None):
         p.letterbox = none
         assert "drawbox" not in _graph(p, tl)
+
+
+def test_assemble_refuses_stale_and_missing_segments(mini_project):
+    p = mini_project
+    render_segments(p)
+    film_overlay(p)
+    p.by_id("s02").d = 2.0  # trailer.json changed, s02 not re-rendered
+    (p.seg_dir / "s03.mp4").unlink()
+    with pytest.raises(SegmentError) as ex:
+        assemble(p)
+    msg = str(ex.value)
+    assert "s02" in msg and "s03" in msg and "missing" in msg
+    assert f"run: build.py {p.path} segments s02 s03" in msg
+    assert not (p.out_dir / "video_only.mp4").exists()
+
+
+def test_assemble_checks_the_rendered_length(mini_project, monkeypatch):
+    p = mini_project
+    render_segments(p)
+    film_overlay(p)
+    real = asm._graph
+    monkeypatch.setattr(asm, "_graph", lambda p, tl: real(p, tl).replace(
+        "format=yuv420p[vout]", "format=yuv420p,trim=end_frame=10[vout]"))
+    with pytest.raises(SegmentError) as ex:
+        assemble(p)
+    assert "video_only" in str(ex.value)
+
+
+def test_mux_refuses_a_score_of_the_wrong_length(mini_project):
+    p = mini_project
+    _, total = timeline(p.edl, p.fps)
+    p.out_dir.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(p.out_dir / "score.wav"), "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(48000)
+        w.writeframes(bytes(4 * int(round((total + 0.5) * 48000))))
+    with pytest.raises(asm.StaleFileError) as ex:
+        asm.mux(p)
+    assert f"run: build.py {p.path} audio" in str(ex.value)
+    r = subprocess.run([sys.executable, str(BUILD), str(p.path), "mux"],
+                       capture_output=True, text=True)
+    assert r.returncode == 1 and "error:" in r.stderr and "audio" in r.stderr
+
+
+def test_build_rejects_unknown_segment_ids(mini_project):
+    p = mini_project
+    r = subprocess.run([sys.executable, str(BUILD), str(p.path), "segments", "s02", "s99", "x"],
+                       capture_output=True, text=True)
+    assert r.returncode == 1
+    assert "error: unknown segment id(s): s99 x" in r.stderr
+    assert not (p.seg_dir / "s02.mp4").exists()

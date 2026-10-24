@@ -22,10 +22,10 @@
 ```
 /plugin marketplace add leogodnik/leo50s-montage
 /plugin install leo50s-montage@leo50s
-bash ~/.claude/plugins/cache/leo50s/leo50s-montage/0.1.0/scripts/setup_env.sh
+bash ~/.claude/plugins/cache/leo50s/leo50s-montage/0.1.1/scripts/setup_env.sh
 ```
 
-Третья команда создаёт окружения в `~/.cache/leo50s-montage` (`venv` и `venv-whisper`). Другое место задаёт переменная `LEO50S_HOME`; она должна быть выставлена и при установке, и при работе. Без whisper: `setup_env.sh --no-whisper`. Номер версии в пути меняется с обновлением плагина.
+Третья команда создаёт окружения в `~/.cache/leo50s-montage` (`venv` и `venv-whisper`) и заранее скачивает модель whisper `medium` (около 1,5 ГБ). Другое место задаёт переменная `LEO50S_HOME`; она должна быть выставлена и при установке, и при работе. Без whisper: `setup_env.sh --no-whisper`. Номер версии в пути меняется с обновлением плагина.
 
 ## Как начать
 
@@ -55,14 +55,20 @@ bash ~/.claude/plugins/cache/leo50s/leo50s-montage/0.1.0/scripts/setup_env.sh
    }
    ```
    Все поля описаны в `skills/trailer-build/references/project-format.md`.
-3. Собрать и проверить:
+3. Собрать и проверить (из папки `_сборка`):
    ```
    PY=~/.cache/leo50s-montage/venv/bin/python
    $PY <плагин>/skills/trailer-build/scripts/build.py trailer.json all
+   $PY <плагин>/skills/speech-safe-cuts/scripts/transcribe_words.py trailer.json
    $PY <плагин>/skills/speech-safe-cuts/scripts/check_cuts.py trailer.json
    $PY <плагин>/skills/speech-safe-cuts/scripts/verify_mix.py trailer.json --transcribe
    $PY <плагин>/skills/trailer-build/scripts/contact_sheet.py trailer.json out/sheet.jpg
    ```
+   `build.py all` создаёт папки `seg/`, `cards/`, `wav/` и `out/` рядом с `trailer.json`;
+   мастер — `out/trailer.mp4` (имя задаёт `output.name`). `transcribe_words.py` пишет
+   `words.json`: он нужен проверкам, потому что в примере есть `"speech": true`. Первый
+   запуск скачивает модель whisper `medium` (около 1,5 ГБ), если её уже не скачал
+   `setup_env.sh`, и может идти несколько минут.
 
 Обычно команды запускает сам Claude по фразе из списка скиллов; руками их гонять не обязательно.
 

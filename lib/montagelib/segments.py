@@ -15,10 +15,16 @@ X264 = "-an -c:v libx264 -crf 14 -preset fast"
 
 
 class SegmentError(Exception):
-    def __init__(self, mismatches: list[tuple[str, int, int]]):
+    """Frame count mismatches as (id, got or None if the file is missing, expected)."""
+
+    def __init__(self, mismatches: list[tuple[str, int | None, int]], hint: str | None = None):
         self.mismatches = list(mismatches)
-        super().__init__("segment frame count mismatch:\n" + "\n".join(
-            f"{sid}: got {got} frames, expected {exp}" for sid, got, exp in self.mismatches))
+        lines = [f"{sid}: missing, expected {exp} frames" if got is None
+                 else f"{sid}: got {got} frames, expected {exp}"
+                 for sid, got, exp in self.mismatches]
+        if hint:
+            lines.append(hint)
+        super().__init__("segment frame count mismatch:\n" + "\n".join(lines))
 
 
 def _q(path) -> str:
@@ -41,6 +47,9 @@ def _clip_chain(seg: Segment, p: Project) -> list[str]:
                      f"setpts={k}*PTS,fps={fps}")
     else:
         chain.append(f"trim=start={seg.ss}:duration={seg.d},setpts=PTS-STARTPTS")
+    if "shake" in seg.fx or "push" in seg.fx:
+        # the crop and zoompan numbers below are for a 1280x720 frame (no-op on 720p sources)
+        chain.append("scale=1280:720:flags=lanczos")
     chain.append(_grade(seg.src, p))
     if "shake" in seg.fx:
         a = seg.shake

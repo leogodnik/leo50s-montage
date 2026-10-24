@@ -10,7 +10,12 @@ import numpy as np
 
 from . import ffm
 from .project import Project
+from .segments import SegmentError
 from .timeline import frames, timeline
+
+
+class StaleFileError(Exception):
+    """A build file left over from an older trailer.json (wrong length)."""
 
 
 def _q(path) -> str:
@@ -93,8 +98,22 @@ def _graph(p: Project, tl) -> str:
     return ";".join(parts + [post])
 
 
+def _check_segments(p: Project, tl) -> None:
+    """Every seg/<id>.mp4 must exist with the frame count trailer.json asks for now."""
+    bad = []
+    for s, _ in tl:
+        path, exp = p.seg_dir / f"{s.id}.mp4", frames(s.d, p.fps)
+        got = ffm.count_frames(path) if path.exists() else None
+        if got != exp:
+            bad.append((s.id, got, exp))
+    if bad:
+        raise SegmentError(bad, f"run: build.py {p.path} segments "
+                                + " ".join(sid for sid, _, _ in bad))
+
+
 def assemble(p: Project) -> Path:
     tl, total = timeline(p.edl, p.fps)
+    _check_segments(p, tl)
     film = p.out_dir / "film.mp4"
     if not film.exists() or ffm.count_frames(film) < frames(total, p.fps):
         film_overlay(p)
@@ -106,6 +125,10 @@ def assemble(p: Project) -> Path:
     out = p.out_dir / "video_only.mp4"
     ffm.run(f"ffmpeg -v error -y {inputs} -filter_complex_script {_q(fcpath)} -map {_q('[vout]')} "
             f"-r {p.fps} -c:v libx264 -crf {p.output['crf']} -preset medium {_q(out)}")
+    got, exp = ffm.count_frames(out), frames(total, p.fps)
+    if got != exp:
+        raise SegmentError([(out.stem, got, exp)], f"check the segments and film: build.py "
+                                                   f"{p.path} segments, then film, assemble")
     return out
 
 
@@ -127,6 +150,11 @@ def mux(p: Project) -> Path:
     video, score = p.out_dir / "video_only.mp4", p.out_dir / "score.wav"
     if not score.exists():
         raise FileNotFoundError(f"{score} not found: run the 'audio' step first")
+    _, total = timeline(p.edl, p.fps)
+    got = ffm.duration(score)
+    if abs(got - (total + 1.0)) > 1 / p.fps:
+        raise StaleFileError(f"{score} is {got:.3f} s, the timeline needs {total + 1.0:.3f} s "
+                             f"(total + 1 s): run: build.py {p.path} audio")
     out = p.out_dir / f"{p.output['name']}.mp4"
     ffm.run(f"ffmpeg -v error -y -i {_q(video)} -i {_q(score)} -map 0:v -map 1:a "
             f"-c:v copy -c:a aac -b:a 192k -shortest -movflags +faststart {_q(out)}")
