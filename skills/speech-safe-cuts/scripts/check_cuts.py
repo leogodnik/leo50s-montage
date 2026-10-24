@@ -2,9 +2,11 @@
 
 usage: check_cuts.py <trailer.json> [--words words.json]
 exit: 0 clean, 1 problems found, 2 missing input (words.json, alias, wav)
-A segment whose last word runs into its end needs the next segment to be
-trans "cut" without a hit; then the end boundary need not be quiet
-("tail: hard cut ok"). The start boundary must always be quiet.
+Start: passes when no word straddles it and the envelope onset of the first
+word inside is at most 20 ms before it; if the start is not quiet only because
+a previous word runs into it, a note "start: previous word tail" is printed.
+End: a segment whose last word runs into its end needs the next segment to be
+trans "cut" without a hit; then the end need not be quiet ("tail: hard cut ok").
 """
 import argparse
 import pathlib
@@ -12,11 +14,12 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
-from montagelib.envelope import quiet_at, read_mono, rms_db  # noqa: E402
+from montagelib.envelope import onset_before, quiet_at, read_mono, rms_db  # noqa: E402
 from montagelib.project import ProjectError, load_project  # noqa: E402
 from montagelib.words import inside, load_words, straddling  # noqa: E402
 
 TAIL = 0.15
+START_SLACK = 0.02
 
 
 class Missing(Exception):
@@ -53,14 +56,23 @@ def check(p, words):
         nxt = p.edl[i + 1] if i + 1 < len(p.edl) else None
         hard_cut = nxt is not None and nxt.trans == "cut" and nxt.hit is None
         tail = bool(ins) and ins[-1].e > b - TAIL
-        if not quiet_at(times, db, a):
-            flags.append("boundary not quiet")
-        elif not quiet_at(times, db, b):
+        start_quiet = quiet_at(times, db, a)
+        if any(w.s < a < w.e for w in cut):
+            if not start_quiet:
+                flags.append("start not quiet")
+        elif ins and onset_before(times, db, ins[0].s) < a - START_SLACK:
+            flags.append("start cuts into a word")
+        elif not start_quiet:
+            if ins:
+                notes.append("start: previous word tail")
+            else:
+                flags.append("start not quiet")
+        if not quiet_at(times, db, b):
             # a hard cut right after the last word is the accepted pattern
             if tail and hard_cut:
                 notes.append("tail: hard cut ok")
             else:
-                flags.append("boundary not quiet")
+                flags.append("end not quiet")
         if tail and nxt is not None and not hard_cut:
             flags.append(f"needs cut (tail word): next {nxt.id} must be trans cut, no hit")
         line = head + "".join(f"  <-- {f}" for f in flags) + "".join(f"  ({n})" for n in notes)
