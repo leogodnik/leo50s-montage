@@ -1,0 +1,13 @@
+{
+  "name": "leo50s-montage",
+  "description": "Кинематографический монтаж из AI-клипов: единый грейд, трейлер по монтажному листу, целые реплики, синтезированная музыка",
+  "version": "0.1.0",
+  "author": {
+    "name": "Leonid Godnik",
+    "email": "leonid.godnik@gmail.com"
+  },
+  "license": "MIT",
+  "keywords": ["video", "trailer", "ffmpeg", "noir", "grading", "whisper", "sound-design"],
+  "homepage": "https://t.me/financialpostpunk",
+  "repository": "https://github.com/leogodnik/leo50s-montage"
+}

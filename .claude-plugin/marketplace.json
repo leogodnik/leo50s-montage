@@ -1,0 +1,14 @@
+{
+  "name": "leo50s",
+  "owner": {
+    "name": "Leonid Godnik",
+    "email": "leonid.godnik@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "leo50s-montage",
+      "source": "./",
+      "description": "Кинематографический монтаж из AI-клипов: единый грейд, трейлер по монтажному листу, целые реплики, синтезированная музыка"
+    }
+  ]
+}
