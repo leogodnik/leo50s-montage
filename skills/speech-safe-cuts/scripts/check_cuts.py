@@ -2,6 +2,9 @@
 
 usage: check_cuts.py <trailer.json> [--words words.json]
 exit: 0 clean, 1 problems found, 2 missing input (words.json, alias, wav)
+A segment whose last word runs into its end needs the next segment to be
+trans "cut" without a hit; then the end boundary need not be quiet
+("tail: hard cut ok"). The start boundary must always be quiet.
 """
 import argparse
 import pathlib
@@ -44,16 +47,24 @@ def check(p, words):
                 raise Missing(f"wav/{s.src}.wav missing, run: build.py {p.path} wav")
             envs[s.src] = rms_db(*read_mono(wav))
         times, db = envs[s.src]
-        flags = []
+        flags, notes = [], []
         if cut:
             flags.append("CUT WORD")
-        if not quiet_at(times, db, a) or not quiet_at(times, db, b):
+        nxt = p.edl[i + 1] if i + 1 < len(p.edl) else None
+        hard_cut = nxt is not None and nxt.trans == "cut" and nxt.hit is None
+        tail = bool(ins) and ins[-1].e > b - TAIL
+        if not quiet_at(times, db, a):
             flags.append("boundary not quiet")
-        if ins and ins[-1].e > b - TAIL:
-            nxt = p.edl[i + 1] if i + 1 < len(p.edl) else None
-            if nxt is not None and (nxt.trans != "cut" or nxt.hit is not None):
-                flags.append(f"needs cut (tail word): next {nxt.id} must be trans cut, no hit")
-        yield s, head + "".join(f"  <-- {f}" for f in flags), len(flags)
+        elif not quiet_at(times, db, b):
+            # a hard cut right after the last word is the accepted pattern
+            if tail and hard_cut:
+                notes.append("tail: hard cut ok")
+            else:
+                flags.append("boundary not quiet")
+        if tail and nxt is not None and not hard_cut:
+            flags.append(f"needs cut (tail word): next {nxt.id} must be trans cut, no hit")
+        line = head + "".join(f"  <-- {f}" for f in flags) + "".join(f"  ({n})" for n in notes)
+        yield s, line, len(flags)
 
 
 def main(argv):

@@ -66,3 +66,12 @@ def test_missing_wav_is_loud_failure(speech_project):
     r = _check(p)
     assert r.returncode == 2
     assert "wav/a.wav" in r.stdout + r.stderr
+
+
+def test_tail_word_with_hard_cut_passes(speech_project):
+    p = speech_project
+    _edit(p, s02={"ss": 0, "d": 1.55}, s03={"trans": "cut", "hit": None})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "tail: hard cut ok" in r.stdout
+    assert "problems: 0" in r.stdout
