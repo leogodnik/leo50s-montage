@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
 
+from .grade import parse_grade
+
 KINDS = ("clip", "card", "title", "black", "white")
 TRANSITIONS = ("fade", "fadewhite", "cut")
 STYLES = ("plain", "painted")
@@ -103,17 +105,8 @@ def _parse_grade(path: Path, problems: list[str]) -> dict[str, tuple[float, floa
     if not path.exists():
         problems.append(f"grade: file not found: {path}")
         return {}
-    grade = {}
-    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        parts = line.split()
-        if not parts or parts[0].startswith("#"):
-            continue
-        try:
-            if len(parts) not in (2, 3):
-                raise ValueError
-            grade[parts[0]] = (float(parts[1]), float(parts[2]) if len(parts) == 3 else 1.0)
-        except ValueError:
-            problems.append(f"grade: {path.name} line {n}: expected 'alias gamma [contrast]', got {line!r}")
+    grade, bad = parse_grade(path.read_text(encoding="utf-8"), path.name)
+    problems.extend(bad)
     return grade
 
 
