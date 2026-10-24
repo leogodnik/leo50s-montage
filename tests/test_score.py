@@ -91,3 +91,31 @@ def test_layer_ending_before_start_raises(mini_project):
     p = _prepared(mini_project, m)
     with pytest.raises(ValueError, match=r"drone s04\.\.s01"):
         build_audio(p)
+
+
+def _white(start_hit_from="s19"):
+    from montagelib.project import Segment
+    return Segment(id="s20", kind="white", d=1.5, ov=0.625,
+                   hit={"type": "explosion", "gain": None, "offset": 0,
+                        "whistle_from": start_hit_from})
+
+
+def test_explosion_whistle_ends_on_the_white_frame():
+    from montagelib.score import explosion_window
+    seg = _white()
+    T = {"s19": 53.625, "s20": 57.354}
+    ws, tx = explosion_window(seg, 57.042, T)
+    assert ws == pytest.approx(53.725)
+    assert tx == pytest.approx(57.042 + 0.3)  # whistle runs ws..tx, ending on the white
+
+
+def test_explosion_whistle_skipped_when_too_short(capsys):
+    from montagelib.score import explosion_window
+    seg = _white()
+    assert explosion_window(seg, 5.0, {"s19": 5.5, "s20": 5.3}) == (None, 5.3)
+    assert "whistle" in capsys.readouterr().out
+
+
+def test_explosion_without_whistle_from():
+    from montagelib.score import explosion_window
+    assert explosion_window(_white(None), 10.0, {"s20": 10.3}) == (None, 10.3)

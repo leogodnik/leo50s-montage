@@ -2,7 +2,7 @@
 
 Один файл описывает весь трейлер: клипы, грейд, монтажный лист (`edl`), партитуру (`score`)
 и выход. Папка, где лежит `trailer.json`, — папка сборки: там появляются `seg/`, `cards/`,
-`wav/`, `out/`. Все относительные пути считаются от неё. `load_project` проверяет файл целиком
+`wav/`, `out/`. Все относительные пути считаются от неё, кроме пути к луку. `load_project` проверяет файл целиком
 и печатает все ошибки разом; шаг `build.py <trailer.json> edl` — самая быстрая проверка.
 
 Время. Все `d` и `ov` прилипают к сетке кадров. Стык `cut` — перекрытие в один кадр, `ov`
@@ -18,7 +18,7 @@
 | `fps` | целое > 0 | `24` | частота кадров трейлера |
 | `size` | `[ширина, высота]` | `[1920, 1080]` | размер кадра |
 | `letterbox` | целое ≥ 0 или `null` | `null` | высота чёрных полос сверху и снизу, px; `null` и `0` — без полос; 138 даёт 2.39:1 в 1080p |
-| `look` | строка | `"noir"` | имя лука из `match-grade/references/looks/` или путь к `.txt` |
+| `look` | строка | `"noir"` | имя лука из `match-grade/references/looks/` или путь к `.txt`; относительный путь считается от текущей папки, а не от папки сборки — пиши абсолютный |
 | `grade` | строка или `null` | `null` | файл грейда `алиас гамма контраст` (пишет `solve_grade.py`); без него у всех 1.0/1.0 |
 | `fonts` | объект `{card, title}` | HelveticaNeue.ttc#1, DIN Condensed Bold.ttf | шрифты карточек и названия; `путь#N` — N-е начертание в коллекции |
 | `edl` | список сегментов | обязателен, не пуст | монтажный лист, по порядку |
@@ -59,7 +59,7 @@
 | `type` | `boom` `bigboom` `braam` `hit` `riser` `explosion` `titleboom` | обязателен | вид удара (см. `synth-score/references/instruments.md`) |
 | `gain` | число или `null` | `null` | громкость; `null` — из `score.hits`, затем из умолчаний |
 | `offset` | число | `0` | сдвиг от момента сегмента, с; у `explosion` не действует |
-| `whistle_from` | id сегмента или `null` | `null` | у `explosion`: свист бомбы от момента этого сегмента + 0.1 до 0.1 с перед вспышкой |
+| `whistle_from` | id сегмента или `null` | `null` | у `explosion`: свист бомбы от момента этого сегмента + 0.1 до белого кадра |
 
 `explosion` бьёт в начало сегмента + 0.3 с (момент полного белого). `riser` длиной `d − 0.15`
 идёт в музыкальную шину и приглушается под речью.
@@ -96,7 +96,7 @@ hit 0.55, riser 0.3, titleboom 0.7, explosion 1.0.
 
 | правка пользователя | поля | шаги для перезапуска |
 |---|---|---|
-| другой текст карточки или названия | `text`, `lines`, `small`, `style` | `cards`, `segments <id>`, `assemble`, `mux`, `preview` |
+| другой текст карточки или названия | `text`, `lines`, `small`, `style` | `segments <id>` (перерисует карточку), `assemble`, `mux`, `preview` |
 | длина сегмента | `d` | `segments <id>`, `film`, `assemble`, `audio`, `mux`, `preview` |
 | граница реплики | `ss`, `d` (по `speech-safe-cuts`) | `segments <id>`, `film`, `assemble`, `audio`, `mux`, `preview`, затем check_cuts и verify_mix |
 | другой кадр из того же клипа | `ss`, `src` | `segments <id>`, `assemble`, `audio`, `mux`, `preview` |
@@ -107,7 +107,7 @@ hit 0.55, riser 0.3, titleboom 0.7, explosion 1.0.
 | удар добавить, убрать, громкость | `hit`, `score.hits` | `audio`, `mux`, `preview` |
 | реплику не слышно, звук клипа | `duck`, `amb`, `speech` | `audio`, `mux`, `preview`, затем verify_mix |
 | другой лук или контраст | `look`, затем `grade` (`solve_grade.py`) | `segments`, `assemble`, `mux`, `preview` |
-| новый клип | `clips`, `grade` | `wav`, `segments <id>`, `assemble`, `audio`, `mux`, `preview` |
+| новый клип | `clips`, затем `grade` (`solve_grade.py`) | `wav`, `segments`, `assemble`, `audio`, `mux`, `preview` |
 | полосы, размер, fps | `letterbox`, `size`, `fps` | `all` |
 | имя файла, качество | `output` | `assemble` (только `crf`), `mux`, `preview` |
 

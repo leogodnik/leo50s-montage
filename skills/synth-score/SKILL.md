@@ -15,7 +15,7 @@ description: Используется, когда трейлеру или рол
 
 1. Партитура в `score` и `hit`. Инструменты, параметры, уровни — `references/instruments.md`; готовые фрагменты — `references/recipes.md`; все поля — `$D/../trailer-build/references/project-format.md`.
 2. Нет файлов `wav/<алиас>.wav` ⇒ `$PY $D/../trailer-build/scripts/build.py $T wav`. Затем тем же скриптом `audio` → `out/score.wav`. Ошибка `ends … before it starts` ⇒ чини `from`, `to`, `trim_end`.
-3. `$PY $D/scripts/audio_report.py $T` → строки `I:`, `LRA:`, `Peak:` и `out/audio_report.png`. Открой PNG через Read: удары — вертикальные полосы на своих секундах (шаг `edl` печатает начала сегментов), перед белым и названием провал, слои начинаются и кончаются где задумано.
+3. `$PY $D/scripts/audio_report.py $T` → строки `I:`, `LRA:`, `Peak:` и `out/audio_report.png`. Открой PNG через Read: удары — вертикальные полосы на своих секундах: удар стоит в визуальном начале сегмента (при `fade`/`fadewhite` это начало + `ov`/2, до 0.4 с позже строки `edl`), перед белым и названием провал, слои начинаются и кончаются где задумано.
 4. I в −18…−16 LUFS, цель −17. Нет ⇒ рецепт «Громкость −17 LUFS».
 5. Тем же `build.py`: `mux`.
 6. Есть сегменты со `speech` ⇒ `$PY $D/../speech-safe-cuts/scripts/verify_mix.py $T --transcribe` → `problems: 0`. Не ноль ⇒ `duck` этого сегмента 0.2, потом 0.1; шаги 2, 5, 6 заново.

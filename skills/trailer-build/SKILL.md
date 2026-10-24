@@ -7,7 +7,7 @@ description: Используется, когда из набора клипов
 
 Весь трейлер — один `trailer.json`: клипы, грейд, монтажный лист `edl`, партитура `score`. Сборка идёт по нему шагами, каждый шаг можно перезапустить. Образец — `references/example-trailer.json` («Землянка»: 25 сегментов, 66.42 с, пояснения в `example-trailer.md`).
 
-В командах ниже `PY` = `${LEO50S_HOME:-$HOME/.cache/leo50s-montage}/venv/bin/python`, `D` = папка этого навыка (печатается при загрузке), `T` = путь к `trailer.json`. Shell не хранит переменные между вызовами: подставляй полные пути в каждую команду.
+В командах ниже `PY` = `${LEO50S_HOME:-$HOME/.cache/leo50s-montage}/venv/bin/python`, `D` = папка этого навыка (печатается при загрузке), `T` = путь к `trailer.json`. Shell не хранит переменные между вызовами: подставляй полные пути в каждую команду. Нет venv ⇒ `bash $D/../../scripts/setup_env.sh` (с whisper: он нужен `speech-safe-cuts`).
 
 **REQUIRED SUB-SKILL:** `speech-safe-cuts` — до любого `ss`/`d` сегмента с речью и до ответа, что реплика целая.
 **REQUIRED SUB-SKILL:** `match-grade` — до первого рендера сегментов.

@@ -35,6 +35,24 @@ def _layer(music, layer, T):
     add(music, x, t0)
 
 
+def explosion_window(seg, start, T):
+    """(whistle start or None, white moment) of an explosion hit.
+
+    The white moment is start + 0.3; the bomb whistle runs from the visual start of
+    `whistle_from` + 0.1 up to exactly that moment, and is skipped if there is no room.
+    """
+    tx = start + 0.3  # the moment the frame goes white
+    wf = seg.hit.get("whistle_from")
+    if wf is None:
+        return None, tx
+    ws = T[wf] + 0.1
+    if tx <= ws:
+        print(f"warning: {seg.id}: explosion whistle from {wf} skipped "
+              f"(starts {ws:.2f} s, white at {tx:.2f} s)")
+        return None, tx
+    return ws, tx
+
+
 def _hit(music, hits, seg, start, T, gains):
     h = seg.hit
     kind = h["type"]
@@ -46,11 +64,9 @@ def _hit(music, hits, seg, start, T, gains):
         add(hits, EVENTS["braam"](), t0 - 0.15, g)
         add(hits, EVENTS["boom"](), t0, 0.5)
     elif kind == "explosion":
-        tx = start + 0.3  # the moment the frame goes white
-        if h["whistle_from"] is not None:
-            ws = T[h["whistle_from"]] + 0.1
-            if tx - 0.1 > ws:
-                add(hits, whistle(tx - 0.1 - ws), ws, 0.55 * g)
+        ws, tx = explosion_window(seg, start, T)
+        if ws is not None:
+            add(hits, whistle(tx - ws), ws, 0.55 * g)
         add(hits, EVENTS["bigboom"](), tx, g)
         add(hits, lp(noise(1.6), 1800) * expdec(1.6, 0.35), tx, 0.9 * g)
     else:
