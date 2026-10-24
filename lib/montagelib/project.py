@@ -1,0 +1,275 @@
+"""trailer.json schema: dataclasses and hand-written validation (all problems at once)."""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal, Optional
+
+KINDS = ("clip", "card", "title", "black", "white")
+TRANSITIONS = ("fade", "fadewhite", "cut")
+STYLES = ("plain", "painted")
+BGS = ("black", "clip")
+HIT_TYPES = ("boom", "bigboom", "braam", "hit", "riser", "explosion", "titleboom")
+FX = ("push", "slow2", "slow4", "shake")
+DEFAULT_FONTS = {
+    "card": "/System/Library/Fonts/HelveticaNeue.ttc#1",
+    "title": "/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf",
+}
+DEFAULT_OUTPUT = {"name": "trailer", "crf": 16, "preview_height": 720}
+
+
+class ProjectError(Exception):
+    def __init__(self, problems: list[str]):
+        self.problems = list(problems)
+        super().__init__("trailer.json: %d problem(s):\n- " % len(self.problems)
+                         + "\n- ".join(self.problems))
+
+
+@dataclass
+class Segment:
+    id: str
+    kind: Literal["clip", "card", "title", "black", "white"]
+    d: float
+    ov: float = 0
+    trans: Literal["fade", "fadewhite", "cut"] = "fade"
+    src: Optional[str] = None
+    ss: float = 0
+    fx: list[str] = field(default_factory=list)
+    shake: float = 1.0
+    speech: bool = False
+    duck: float = 0.5
+    amb: Optional[float] = None
+    hit: Optional[dict] = None
+    text: Optional[str] = None
+    lines: Optional[list[tuple[str, int]]] = None
+    small: bool = False
+    style: Literal["plain", "painted"] = "plain"
+    bg: Literal["black", "clip"] = "black"
+    bg_src: Optional[str] = None
+    fade_in: float = 0
+
+
+@dataclass
+class Project:
+    path: Path
+    build_dir: Path
+    clips: dict[str, Path]
+    fps: int
+    width: int
+    height: int
+    letterbox: Optional[int]
+    look: str
+    grade: dict[str, tuple[float, float]]
+    fonts: dict[str, str]
+    edl: list[Segment]
+    score: dict
+    output: dict
+
+    @property
+    def seg_dir(self) -> Path:
+        return self.build_dir / "seg"
+
+    @property
+    def cards_dir(self) -> Path:
+        return self.build_dir / "cards"
+
+    @property
+    def out_dir(self) -> Path:
+        return self.build_dir / "out"
+
+    @property
+    def wav_dir(self) -> Path:
+        return self.build_dir / "wav"
+
+    def by_id(self, id: str) -> Segment:
+        for s in self.edl:
+            if s.id == id:
+                return s
+        raise KeyError(id)
+
+
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _font_exists(spec: str) -> bool:
+    return Path(spec.split("#", 1)[0]).exists()
+
+
+def _parse_grade(path: Path, problems: list[str]) -> dict[str, tuple[float, float]]:
+    if not path.exists():
+        problems.append(f"grade: file not found: {path}")
+        return {}
+    grade = {}
+    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        parts = line.split()
+        if not parts or parts[0].startswith("#"):
+            continue
+        try:
+            if len(parts) not in (2, 3):
+                raise ValueError
+            grade[parts[0]] = (float(parts[1]), float(parts[2]) if len(parts) == 3 else 1.0)
+        except ValueError:
+            problems.append(f"grade: {path.name} line {n}: expected 'alias gamma [contrast]', got {line!r}")
+    return grade
+
+
+def _parse_hit(sid: str, raw, ids: set, problems: list[str]) -> Optional[dict]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        raw = {"type": raw}
+    if not isinstance(raw, dict):
+        problems.append(f"edl {sid}: hit must be a string or an object, got {raw!r}")
+        return None
+    t = raw.get("type")
+    if t not in HIT_TYPES:
+        problems.append(f"edl {sid}: unknown hit.type {t!r} (allowed: {' '.join(HIT_TYPES)})")
+    wf = raw.get("whistle_from")
+    if wf is not None and wf not in ids:
+        problems.append(f"edl {sid}: hit.whistle_from {wf!r} is not a segment id")
+    gain = raw.get("gain")
+    return {"type": t, "gain": None if gain is None else float(gain),
+            "offset": raw.get("offset", 0), "whistle_from": wf}
+
+
+def _parse_segment(i: int, e, aliases: set, ids: set, problems: list[str]) -> Optional[Segment]:
+    if not isinstance(e, dict):
+        problems.append(f"edl[{i}]: must be an object")
+        return None
+    sid = e.get("id")
+    if not isinstance(sid, str) or not sid:
+        problems.append(f"edl[{i}]: missing id")
+        sid = f"#{i}"
+    label = f"edl {sid}"
+    kind = e.get("kind")
+    if kind not in KINDS:
+        problems.append(f"{label}: unknown kind {kind!r} (allowed: {' '.join(KINDS)})")
+    d = e.get("d")
+    if not _num(d) or d <= 0:
+        problems.append(f"{label}: d must be a positive number, got {d!r}")
+        d = 0.0
+    trans = e.get("trans", "fade")
+    if trans not in TRANSITIONS:
+        problems.append(f"{label}: unknown trans {trans!r} (allowed: {' '.join(TRANSITIONS)})")
+    style = e.get("style", "plain")
+    if style not in STYLES:
+        problems.append(f"{label}: unknown style {style!r}")
+    bg = e.get("bg", "black")
+    if bg not in BGS:
+        problems.append(f"{label}: unknown bg {bg!r}")
+    src = e.get("src")
+    if kind == "clip" and src is None:
+        problems.append(f"{label}: clip needs src")
+    if src is not None and src not in aliases:
+        problems.append(f"{label}: unknown src alias {src!r}")
+    bg_src = e.get("bg_src")
+    if bg_src is not None and bg_src not in aliases:
+        problems.append(f"{label}: unknown bg_src alias {bg_src!r}")
+    fx = e.get("fx", [])
+    if isinstance(fx, str):
+        fx = [fx]
+    if not isinstance(fx, list):
+        problems.append(f"{label}: fx must be a list of strings")
+        fx = []
+    for f in fx:
+        if f not in FX:
+            problems.append(f"{label}: unknown fx {f!r} (allowed: {' '.join(FX)})")
+    lines = e.get("lines")
+    if lines is not None:
+        try:
+            lines = [(str(t), int(sz)) for t, sz in lines]
+        except (TypeError, ValueError):
+            problems.append(f"{label}: lines must be a list of [text, size]")
+            lines = None
+    return Segment(
+        id=sid, kind=kind, d=d, ov=e.get("ov", 0), trans=trans, src=src,
+        ss=e.get("ss", 0), fx=list(fx), shake=e.get("shake", 1.0),
+        speech=bool(e.get("speech", False)), duck=e.get("duck", 0.5),
+        amb=e.get("amb"), hit=_parse_hit(sid, e.get("hit"), ids, problems),
+        text=e.get("text"), lines=lines, small=bool(e.get("small", False)),
+        style=style, bg=bg, bg_src=bg_src, fade_in=e.get("fade_in", 0))
+
+
+def _check_score(score, ids: set, problems: list[str]) -> None:
+    if not isinstance(score, dict):
+        problems.append("score: must be an object")
+        return
+    for n, layer in enumerate(score.get("layers", [])):
+        if not isinstance(layer, dict):
+            problems.append(f"score.layers[{n}]: must be an object")
+            continue
+        fr, to = layer.get("from"), layer.get("to")
+        if fr not in ids:
+            problems.append(f"score.layers[{n}]: from {fr!r} is not a segment id")
+        if to != "end" and to not in ids:
+            problems.append(f"score.layers[{n}]: to {to!r} is not a segment id or 'end'")
+    for t in score.get("hits", {}):
+        if t not in HIT_TYPES:
+            problems.append(f"score.hits: unknown hit type {t!r}")
+
+
+def load_project(path: Path) -> Project:
+    path = Path(path).resolve()
+    base = path.parent
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as ex:
+        raise ProjectError([f"cannot read {path}: {ex}"])
+    if not isinstance(data, dict):
+        raise ProjectError(["top level must be an object"])
+    problems: list[str] = []
+
+    raw_clips = data.get("clips", {})
+    if not isinstance(raw_clips, dict):
+        problems.append("clips: must be an object {alias: path}")
+        raw_clips = {}
+    clips = {a: (base / p) for a, p in raw_clips.items()}
+
+    fps = data.get("fps", 24)
+    if not isinstance(fps, int) or isinstance(fps, bool) or fps <= 0:
+        problems.append(f"fps: must be a positive integer, got {fps!r}")
+        fps = 24
+    size = data.get("size", [1920, 1080])
+    if not (isinstance(size, list) and len(size) == 2 and all(isinstance(x, int) and x > 0 for x in size)):
+        problems.append(f"size: must be [width, height], got {size!r}")
+        size = [1920, 1080]
+    letterbox = data.get("letterbox")
+    if letterbox is not None and not (isinstance(letterbox, int) and letterbox >= 0):
+        problems.append(f"letterbox: must be a non-negative integer or null, got {letterbox!r}")
+        letterbox = None
+
+    grade_file = data.get("grade")
+    grade = _parse_grade(base / grade_file, problems) if grade_file else {}
+
+    fonts = {**DEFAULT_FONTS, **(data.get("fonts") or {})}
+    for role, spec in fonts.items():
+        if not _font_exists(spec):
+            problems.append(f"fonts.{role}: font file not found: {spec}")
+
+    output = {**DEFAULT_OUTPUT, **(data.get("output") or {})}
+
+    raw_edl = data.get("edl", [])
+    if not isinstance(raw_edl, list) or not raw_edl:
+        problems.append("edl: must be a non-empty list")
+        raw_edl = []
+    ids = {e["id"] for e in raw_edl if isinstance(e, dict) and isinstance(e.get("id"), str)}
+    seen = set()
+    for e in raw_edl:
+        if isinstance(e, dict) and e.get("id") in seen:
+            problems.append(f"edl: duplicate id {e['id']!r}")
+        if isinstance(e, dict):
+            seen.add(e.get("id"))
+    aliases = set(clips)
+    edl = [s for i, e in enumerate(raw_edl)
+           if (s := _parse_segment(i, e, aliases, ids, problems)) is not None]
+
+    score = data.get("score", {})
+    _check_score(score, ids, problems)
+
+    if problems:
+        raise ProjectError(problems)
+    return Project(path=path, build_dir=base, clips=clips, fps=fps, width=size[0],
+                   height=size[1], letterbox=letterbox, look=data.get("look", "noir"),
+                   grade=grade, fonts=fonts, edl=edl, score=score, output=output)
