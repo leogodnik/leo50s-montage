@@ -96,17 +96,40 @@ def _clip(p, seconds, bursts):
     ffm.extract_wav(clip, p.wav_dir / "a.wav")
 
 
+def _continuous(p):
+    # one shout from 0.0 to 1.5 s, a 14 dB dip (no silence) at 1.18-1.20, then silence
+    import numpy as np
+    from scipy.io import wavfile
+    sr = 48000
+    t = np.arange(int(3.0 * sr)) / sr
+    amp = np.where(t < 1.5, 0.5, 0.0)
+    amp[(t >= 1.18) & (t < 1.20)] = 0.1
+    wavfile.write(p.wav_dir / "a.wav", sr, (amp * np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16))
+
+
 def test_start_after_previous_word_passes(speech_project):
-    # "два" follows "один" with no pause: the start cannot be quiet, but it is
-    # 20 ms before the word, so only a note is printed
+    # "два" follows "один" with no pause: the start cannot be quiet, but it sits
+    # in the envelope dip before the word, so only a note is printed
     p = speech_project
-    _clip(p, 3.0, [(0.0, 2.0)])
-    _words(p, [("один", 0.1, 1.7), ("два", 1.7, 2.0)])
-    _edit(p, s02={"ss": 1.68, "d": 0.8})
+    _continuous(p)
+    _words(p, [("один", 0.0, 1.2), ("два", 1.2, 1.5)])
+    _edit(p, s02={"ss": 1.18, "d": 0.8})
     r = _check(p)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "start: previous word tail" in r.stdout
+    assert "start: not quiet (previous sound tail, dip 1.18)" in r.stdout
     assert "problems: 0" in r.stdout
+
+
+def test_start_mid_word_in_continuous_speech_fails(speech_project):
+    # whisper lags and puts "два" at 1.30; no pause before it, so onset_before
+    # falls back to whisper; the dip at 1.18 shows the start is mid-word
+    p = speech_project
+    _continuous(p)
+    _words(p, [("один", 0.0, 1.30), ("два", 1.30, 1.5)])
+    _edit(p, s02={"ss": 1.30, "d": 0.7})
+    r = _check(p)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "start cuts into a word (dip 1.18)" in r.stdout
 
 
 def test_start_cutting_into_word_fails(speech_project):

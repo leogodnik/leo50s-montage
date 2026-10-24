@@ -5,7 +5,8 @@ import pytest
 from scipy.io import wavfile
 
 from montagelib import ffm
-from montagelib.envelope import bars, onset_before, quiet_at, rms_db, syllable_peaks
+from montagelib.envelope import (bars, dip_between, onset_before, quiet_at, rms_db,
+                                 syllable_peaks)
 
 
 @pytest.fixture(scope="module")
@@ -52,3 +53,18 @@ def test_onset_before_long_word(tmp_path, ffmpeg_ok):
     sr, x = wavfile.read(ffm.extract_wav(clip, tmp_path / "long.wav"))
     times, db = rms_db(x.astype(float).mean(1) / 32768, sr)
     assert abs(onset_before(times, db, t_guess=1.2) - 0.5) <= 0.03
+
+
+def test_dip_between_finds_local_minimum(env):
+    times, db = env
+    assert 0.8 <= dip_between(times, db, 0.6, 1.3) < 1.2
+
+
+def test_dip_between_prefers_last_dip():
+    # a deep syllable gap at 0.40 and a shallower dip right before the next word at 0.80
+    times = np.arange(0, 1.0, 0.02)
+    db = np.full(len(times), -12.0)
+    db[20] = -29.0
+    db[40] = -20.0
+    assert abs(dip_between(times, db, 0.2, 0.9) - 0.80) < 1e-9
+    assert abs(dip_between(times, db, 0.2, 0.7) - 0.40) < 1e-9

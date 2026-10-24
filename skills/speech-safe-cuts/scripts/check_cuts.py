@@ -3,8 +3,10 @@
 usage: check_cuts.py <trailer.json> [--words words.json]
 exit: 0 clean, 1 problems found, 2 missing input (words.json, alias, wav)
 Start: passes when no word straddles it and the envelope onset of the first
-word inside is at most 20 ms before it; if the start is not quiet only because
-a previous word runs into it, a note "start: previous word tail" is printed.
+word inside is at most 30 ms before it. In continuous speech (no pause before
+the word, so no onset) it must sit at most 20 ms after the last envelope dip
+between the previous word's start and the word. A loud start that passes gets the note
+"start: not quiet (previous sound tail[, dip T])".
 End: a segment whose last word runs into its end needs the next segment to be
 trans "cut" without a hit; then the end need not be quiet ("tail: hard cut ok").
 """
@@ -14,12 +16,14 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
-from montagelib.envelope import onset_before, quiet_at, read_mono, rms_db  # noqa: E402
+from montagelib.envelope import dip_between, onset_before, quiet_at, read_mono, rms_db  # noqa: E402
 from montagelib.project import ProjectError, load_project  # noqa: E402
 from montagelib.words import inside, load_words, straddling  # noqa: E402
 
 TAIL = 0.15
-START_SLACK = 0.02
+TOL = 0.03  # word timestamp tolerance, also the start slack
+DIP_SLACK = 0.02
+NO_PREV = 0.6
 
 
 class Missing(Exception):
@@ -37,7 +41,7 @@ def check(p, words):
             raise Missing(f"words.json has no entry for clip {s.src!r} (segment {s.id}); "
                           f"run transcribe_words.py")
         ws = words[s.src]
-        ins, cut = inside(ws, a, b), straddling(ws, a, b)
+        ins, cut = inside(ws, a, b, TOL), straddling(ws, a, b, TOL)
         head = f"{s.id} {s.src} {a:5.2f}-{b:5.2f} words: {' '.join(w.w for w in ins)}"
         if cut:
             head += " | straddling: " + " ".join(f"{w.w}({w.s}-{w.e})" for w in cut)
@@ -57,16 +61,25 @@ def check(p, words):
         hard_cut = nxt is not None and nxt.trans == "cut" and nxt.hit is None
         tail = bool(ins) and ins[-1].e > b - TAIL
         start_quiet = quiet_at(times, db, a)
+        onset = onset_before(times, db, ins[0].s) if ins else None
         if any(w.s < a < w.e for w in cut):
             if not start_quiet:
                 flags.append("start not quiet")
-        elif ins and onset_before(times, db, ins[0].s) < a - START_SLACK:
+        elif onset is not None and onset != ins[0].s and onset < a - TOL:
             flags.append("start cuts into a word")
-        elif not start_quiet:
-            if ins:
-                notes.append("start: previous word tail")
+        elif not start_quiet and onset is None:
+            flags.append("start not quiet")
+        elif not start_quiet and onset == ins[0].s:
+            # no pause before the word: onset_before fell back to whisper's start,
+            # which lags on shouts; the envelope dip before the word decides
+            t0 = max((w.s for w in ws if w.s < ins[0].s), default=ins[0].s - NO_PREV)
+            t_min = dip_between(times, db, t0, ins[0].s + 0.05)
+            if a <= t_min + DIP_SLACK + 1e-9:
+                notes.append(f"start: not quiet (previous sound tail, dip {t_min:.2f})")
             else:
-                flags.append("start not quiet")
+                flags.append(f"start cuts into a word (dip {t_min:.2f})")
+        elif not start_quiet:
+            notes.append("start: not quiet (previous sound tail)")
         if not quiet_at(times, db, b):
             # a hard cut right after the last word is the accepted pattern
             if tail and hard_cut:

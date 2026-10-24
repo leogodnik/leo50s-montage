@@ -69,6 +69,21 @@ def onset_before(times, db, t_guess, drop=25, search=1.5) -> float:
     return float(t_guess)
 
 
+def dip_between(times, db, t0, t1, prominence=2) -> float:
+    """The envelope dip closest to t1 in [t0, t1]: the last local minimum at least
+    `prominence` dB deep, or the quietest window if there is none.
+
+    The last dip, not the deepest: in a shout the previous word's own syllable
+    gaps can be deeper than the short dip right before the next word.
+    """
+    sel = np.flatnonzero((times >= t0 - EPS) & (times <= t1 + EPS))
+    if len(sel) == 0:
+        return float(t0)
+    idx, _ = find_peaks(-db[sel], prominence=prominence)
+    i = idx[-1] if len(idx) else int(np.argmin(db[sel]))
+    return float(times[sel[i]])
+
+
 def syllable_peaks(times, db, t0, t1, prominence=6) -> list[float]:
     sel = np.flatnonzero((times >= t0 - EPS) & (times <= t1 + EPS))
     if len(sel) == 0:
