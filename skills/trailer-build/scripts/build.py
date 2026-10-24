@@ -12,6 +12,7 @@ from montagelib import assemble as asm  # noqa: E402
 from montagelib import ffm  # noqa: E402
 from montagelib.cards import render_card  # noqa: E402
 from montagelib.project import ProjectError, load_project  # noqa: E402
+from montagelib.score import build_audio  # noqa: E402
 from montagelib.segments import SegmentError, render_segments  # noqa: E402
 from montagelib.timeline import timeline  # noqa: E402
 
@@ -57,8 +58,7 @@ def step_assemble(p, ids):
 
 
 def step_audio(p, ids):
-    asm.silent_score(p)
-    print("audio: silent stub (TODO task 6)")
+    build_audio(p)
 
 
 def step_mux(p, ids):

@@ -211,6 +211,7 @@ def _parse_segment(i: int, e, aliases: set, ids: set, problems: list[str]) -> Op
 
 
 def _check_score(score, ids: set, problems: list[str]) -> None:
+    from .synth import INSTRUMENTS  # lazy: loading a project should not need scipy otherwise
     if not isinstance(score, dict):
         problems.append("score: must be an object")
         return
@@ -222,6 +223,10 @@ def _check_score(score, ids: set, problems: list[str]) -> None:
         if not isinstance(layer, dict):
             problems.append(f"score.layers[{n}]: must be an object")
             continue
+        inst = layer.get("instrument")
+        if inst not in INSTRUMENTS:
+            problems.append(f"score.layers[{n}]: unknown instrument {inst!r} "
+                            f"(allowed: {' '.join(INSTRUMENTS)})")
         fr, to = layer.get("from"), layer.get("to")
         if fr not in ids:
             problems.append(f"score.layers[{n}]: from {fr!r} is not a segment id")

@@ -14,7 +14,7 @@
     {"id": "s05", "kind": "black", "d": 0.5, "ov": 0.25}
   ],
   "score": {
-    "layers": [{"name": "drone", "from": "s00", "to": "s04"}],
+    "layers": [{"instrument": "drone", "from": "s00", "to": "s04", "gain": 0.3}],
     "hits": {"boom": 0.7}
   }
 }

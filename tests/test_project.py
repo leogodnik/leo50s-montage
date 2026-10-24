@@ -130,3 +130,12 @@ def test_null_and_nonfinite_numbers(tmp_path):
 def test_amb_null_is_allowed(tmp_path):
     pr = load_project(_write(tmp_path, lambda d: d["edl"][2].update(amb=None)))
     assert pr.by_id("s02").amb is None
+
+
+def test_unknown_instrument_is_a_problem(tmp_path):
+    def m(d):
+        d["score"]["layers"][0]["instrument"] = "kazoo"
+    with pytest.raises(ProjectError) as ei:
+        load_project(_write(tmp_path, m))
+    assert len(ei.value.problems) == 1
+    assert "kazoo" in str(ei.value)

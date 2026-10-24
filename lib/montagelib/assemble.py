@@ -110,7 +110,7 @@ def assemble(p: Project) -> Path:
 
 
 def silent_score(p: Project) -> Path:
-    """TODO task 6: placeholder score, silent stereo 48 kHz 16-bit, total + 1 s long."""
+    """Silent stereo 48 kHz 16-bit score, total + 1 s long (a blank bed for tests)."""
     _, total = timeline(p.edl, p.fps)
     sr = 48000
     out = p.out_dir / "score.wav"
