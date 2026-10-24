@@ -87,7 +87,8 @@ def _decaying(p):
     amp = np.where((t >= 0.5) & (t < 0.8), 0.5, 0.0)
     amp += np.where(t >= 1.2, 0.5 * np.exp(-np.clip(t - 1.25, 0, None) / 0.1), 0.0)
     amp[(t >= 1.2) & (t < 1.25)] = 0.5
-    wavfile.write(p.wav_dir / "a.wav", sr, (amp * np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16))
+    x = amp * np.sin(2 * np.pi * 440 * t)
+    wavfile.write(p.wav_dir / "a.wav", sr, (x * 32767).astype(np.int16))
 
 
 def test_tail_word_with_hit_after_last_syllable_passes(speech_project):
@@ -102,10 +103,11 @@ def test_tail_word_with_hit_after_last_syllable_passes(speech_project):
 
 def test_sound_running_on_to_the_end_is_a_tail(speech_project):
     # v6 s11: whisper ends "два" at 1.30, but the sound never goes quiet before the end
+    # (no hit after it: a hit there would land on sound still at full level)
     p = speech_project
     _clip(p, 2.5, [(0.5, 0.8), (1.2, 2.0)])
     _words(p, [("один", 0.5, 0.8), ("два", 1.2, 1.3)])
-    _edit(p, s02={"ss": 0, "d": 1.9})
+    _edit(p, s02={"ss": 0, "d": 1.9}, s03={"hit": None})
     r = _check(p)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "end not quiet" not in r.stdout
@@ -197,3 +199,87 @@ def test_start_cutting_into_word_fails(speech_project):
     r = _check(p)
     assert r.returncode == 1, r.stdout + r.stderr
     assert "start cuts into a word" in r.stdout
+
+
+def _shape(p, amp_of_t, seconds=2.5):
+    """Write wav/a.wav: a 440 Hz tone under the amplitude envelope amp_of_t(t)."""
+    import numpy as np
+    from scipy.io import wavfile
+    sr = 48000
+    t = np.arange(int(seconds * sr)) / sr
+    x = amp_of_t(t) * np.sin(2 * np.pi * 440 * t)
+    wavfile.write(p.wav_dir / "a.wav", sr, (x * 32767).astype(np.int16))
+
+
+def _sustained(t):
+    # "один" 0.5-0.8; "два" peaks at 1.2-1.3, dips 8 dB at 1.35-1.40, then "-те" keeps
+    # sounding 2 dB under the peak until 2.0 (v6 "Тяните" at 1.30-2.13)
+    import numpy as np
+    amp = np.where((t >= 0.5) & (t < 0.8), 0.5, 0.0)
+    amp = np.where((t >= 1.2) & (t < 1.3), 0.5, amp)
+    amp = np.where((t >= 1.3) & (t < 1.4), 0.2, amp)
+    return np.where((t >= 1.4) & (t < 2.0), 0.4, amp)
+
+
+def test_hit_on_a_still_sounding_last_syllable_fails(speech_project):
+    # the hard cut's hit (1.875) is 0.6 s after the last syllable peak, but the source
+    # there is only 2 dB under that peak: the hit lands on a sounding syllable
+    p = speech_project
+    _shape(p, _sustained)
+    _words(p, [("один", 0.5, 0.8), ("два", 1.2, 1.9)])
+    _edit(p, s02={"ss": 0, "d": 1.9})
+    r = _check(p)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "hit on last syllable: next s03" in r.stdout
+
+
+def test_hit_after_a_decayed_last_syllable_passes(speech_project):
+    # "два" decays from 1.25 (tau 0.1 s); the hit 0.29 s later finds it 25 dB down
+    p = speech_project
+    _decaying(p)
+    _edit(p, s02={"ss": 0, "d": 1.5833})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "tail: next s03 hit" in r.stdout
+
+
+def test_fadewhite_after_tail_word_fails(speech_project):
+    # the user's correction: no white flash after a word that runs into the cut
+    p = speech_project
+    _edit(p, s02={"ss": 0, "d": 1.55}, s03={"trans": "fadewhite", "ov": 0.5, "hit": None})
+    r = _check(p)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "needs cut or fade (tail word): next s03 fadewhite" in r.stdout
+
+
+def _run_on(dip_at):
+    # one unbroken sound 0.5-1.9 with a 14 dB dip (20 ms) where "два" really starts
+    def amp(t):
+        import numpy as np
+        a = np.where((t >= 0.5) & (t < 1.9), 0.5, 0.0)
+        a[(t >= dip_at) & (t < dip_at + 0.02)] = 0.1
+        return a
+    return amp
+
+
+def test_end_cutting_into_next_word_fails(speech_project):
+    # whisper places "два" at 1.70, 0.2 s after the end; the envelope shows it
+    # starting at the 1.38 dip, 0.1 s before the end: the run-on waiver must not apply
+    p = speech_project
+    _shape(p, _run_on(1.38))
+    _words(p, [("один", 0.5, 1.2), ("два", 1.7, 1.9)])
+    _edit(p, s02={"ss": 0, "d": 1.5}, s03={"hit": None})
+    r = _check(p)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "end cuts into next word (onset at 1.38)" in r.stdout
+
+
+def test_end_before_next_word_onset_passes(speech_project):
+    # the same, but "два" really starts at 1.58, after the end
+    p = speech_project
+    _shape(p, _run_on(1.58))
+    _words(p, [("один", 0.5, 1.2), ("два", 1.7, 1.9)])
+    _edit(p, s02={"ss": 0, "d": 1.5}, s03={"hit": None})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "tail: sound runs on to the end" in r.stdout

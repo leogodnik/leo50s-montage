@@ -10,6 +10,8 @@ QUIET_ABS = -45.0  # dBFS: at or below this a window is quiet whatever the nearb
 CLICK_WINDOWS = 1  # isolated loud 20 ms windows tolerated inside a quiet margin
 SMOOTH = 3  # windows in the moving average before syllable peak picking
 SYL_BELOW = 18  # dB under the loudest syllable of the span: quieter peaks are noise
+HIT_GAP = 0.12  # s: a hit at least this long after the last syllable peak
+HIT_DROP = 7  # dB the source must fall from that peak (v6 s09 braam 9.0 ok; "Тяните" 4.9 not)
 EPS = 1e-9
 
 
@@ -116,3 +118,17 @@ def syllable_peaks(times, db, t0, t1, prominence=6, below=SYL_BELOW) -> list[flo
         return []
     top = s[idx].max()
     return [float(times[sel[i]]) for i in idx if s[i] >= top - below]
+
+
+def hit_on_syllable(times, db, last, t_hit, end) -> tuple[bool, float]:
+    """Does a hit at t_hit (clip time) land on the syllable peaking at `last`?
+
+    The source is read at the hit, or at `end` (the cut) when the hit comes after it.
+    Clear only if the hit is HIT_GAP after the peak and the source there is HIT_DROP dB
+    under the syllable's top. Returns (on syllable, drop in dB).
+    """
+    top = db[(times >= last - 0.04 - EPS) & (times <= last + 0.04 + EPS)].max()
+    t = min(t_hit, end)
+    i = np.flatnonzero(times <= t + EPS)
+    drop = float(top - db[i[-1]]) if len(i) else 0.0
+    return t_hit < last + HIT_GAP or drop < HIT_DROP, drop

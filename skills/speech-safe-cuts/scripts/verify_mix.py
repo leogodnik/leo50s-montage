@@ -1,7 +1,9 @@
 """Check that every speech segment survives the mix: at each source syllable peak the mix
 level follows the source (lost: more than 6 dB under, masked: more than 8 dB over the
-segment's common speech gain), and no other segment's hit sits within 120 ms of the last
-syllable. Syllables in the first 0.3 s after a segment's own hit may be masked by it.
+segment's common speech gain), the gain itself is at most +8 dB (otherwise the score
+buries the whole segment), and another segment's hit near or after the last syllable
+lands at least 120 ms after its peak with the source there (or at the segment end, if
+the hit is later) 7 dB under it.
 
 usage: verify_mix.py <trailer.json> [--segment id ...] [--transcribe] [-v]
 exit: 0 clean, 1 envelope problems, 2 missing input. --transcribe is advisory only.
@@ -16,18 +18,19 @@ import numpy as np
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
 from montagelib import ffm, whisper  # noqa: E402
-from montagelib.envelope import read_mono, rms_db, smooth, syllable_peaks  # noqa: E402
+from montagelib.envelope import (hit_on_syllable, read_mono, rms_db, smooth,  # noqa: E402
+                                 syllable_peaks)
 from montagelib.project import ProjectError, load_project  # noqa: E402
 from montagelib.timeline import timeline, visual_start  # noqa: E402
 from montagelib.words import inside, load_words  # noqa: E402
 
-EVENT_GAP = 0.12  # another segment's hit this close to the last syllable peak masks it
+EVENT_GAP = 0.12  # hits of other segments from this long before the last syllable are checked
 WIN = 0.02  # rms_db default window
 MATCH = 0.04  # room before the segment start in the mix envelope
 LOST_DB = 6  # mix this far under the source at a syllable: it is gone (v6 min -1.9)
 MASKED_DB = 8  # mix this far over the source: something covers it (v6 max +5.7)
 AGREE_DB = 3  # syllables within this of each other share the segment's speech gain
-OWN_HIT = 0.3  # s after a segment's own visual start where its own hit may cover speech
+BURIED_DB = 8  # segment gain above this: the score buries the whole line (v6 max +6.0)
 PUNCT = string.punctuation + "«»—–…"
 
 
@@ -76,30 +79,33 @@ def check_envelope(p, tl, segs, verbose=False):
         devs = [float(mdb[np.argmin(abs(mt - w))] - sdb[np.argmin(abs(times - t))])
                 for t, w in zip(src, want)]
         gain = speech_gain(devs) if devs else 0.0
-        vs = visual_start(s, st)
-        flags, notes, rows, heard = [], [], [], 0
+        flags, rows, heard = [], [], 0
+        if gain > BURIED_DB:
+            flags.append(f"segment buried under score (gain {gain:+.1f} dB)")
         for t, w, d in zip(src, want, devs):
             d -= gain
-            own = s.hit is not None and 0 <= w - vs < OWN_HIT
-            rows.append(f"{t:.2f}:{d:+.1f}" + ("(own hit)" if own else ""))
+            rows.append(f"{t:.2f}:{d:+.1f}")
             if d < -LOST_DB:
                 flags.append(f"syllable lost at {t:.2f} ({d:+.1f} dB)")
-            elif d > MASKED_DB and not own:
+            elif d > MASKED_DB:
                 flags.append(f"syllable masked at {t:.2f} ({d:+.1f} dB)")
             else:
                 heard += 1
-                if d > MASKED_DB:
-                    notes.append(f"own hit covers {t:.2f} ({d:+.1f} dB), allowed")
-        tail = [f"{sid}@{t:.2f}" for sid, t in events
-                if want and sid != s.id and abs(t - want[-1]) <= EVENT_GAP]
-        if tail:
+        tail, on_last = [], False
+        for sid, t in events:
+            if not want or sid == s.id or not want[-1] - EVENT_GAP <= t <= st + s.d + EVENT_GAP:
+                continue
+            on, drop = hit_on_syllable(times, db, src[-1], s.ss + (t - st), s.ss + s.d)
+            tail.append(f"{sid}@{t:.2f}({drop:.1f} dB down)")
+            on_last |= on
+        if on_last:
             flags.append("score event on last syllable")
         problems += len(flags)
         span = f"{min(devs) - gain:+.1f}..{max(devs) - gain:+.1f}" if devs else "-"
         print(f"{s.id} {s.src} {st:6.2f}-{st + s.d:6.2f} peaks src/matched "
               f"{len(src)}/{heard} gain {gain:+.1f} dB, syllables {span} dB, "
               f"events near tail: {' '.join(tail) or '-'}"
-              + "".join(f"  <-- {f}" for f in flags) + "".join(f"  ({n})" for n in notes))
+              + "".join(f"  <-- {f}" for f in flags))
         if verbose and rows:
             print("    " + " ".join(rows))
     return problems

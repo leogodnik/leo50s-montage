@@ -10,9 +10,13 @@ between the previous word's start and the word. A loud start that passes gets th
 End: checked at the rendered end ss + d snapped to the frame grid. It must be quiet
 (quiet_at: 25 dB under the nearby peak or at most -45 dBFS, one click window tolerated)
 unless the last word runs into it: whisper ends it within 0.15 s of the end, or the
-sound never goes quiet between the word and the end. Such a tail needs no quiet end,
-but the next segment's hit must land at least 0.12 s after the last syllable peak
-("hit on last syllable" otherwise). Visual transitions do not fade the outgoing speech.
+sound never goes quiet between the word and the end. Such a tail needs no quiet end, but
+the next segment enters with "cut" or a plain "fade", never "fadewhite", and its hit
+lands at least 0.12 s after the last syllable peak with the source there (or at the cut,
+if the hit is later) 7 dB under that peak ("hit on last syllable" otherwise).
+A loud end must not cut into the next word: a word whisper starts within 0.4 s after the
+end needs its envelope onset (or, in continuous speech, the dip before it) at the end
+or later ("end cuts into next word").
 """
 import argparse
 import pathlib
@@ -20,14 +24,15 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
-from montagelib.envelope import (dip_between, onset_before, peak_near, quiet_at,  # noqa: E402
-                                 quiet_detail, read_mono, rms_db, syllable_peaks)
+from montagelib.envelope import (dip_between, hit_on_syllable, onset_before,  # noqa: E402
+                                 peak_near, quiet_at, quiet_detail, read_mono, rms_db,
+                                 syllable_peaks)
 from montagelib.project import ProjectError, load_project  # noqa: E402
 from montagelib.timeline import snap, timeline, visual_start  # noqa: E402
 from montagelib.words import inside, load_words, straddling  # noqa: E402
 
 TAIL = 0.15  # whisper's last word ending this close to the end runs into it
-EVENT_GAP = 0.12  # a hit closer than this after the last syllable peak masks it (as verify_mix)
+NEXT_WORD = 0.4  # s after a loud end where a late-stamped next word may really start
 DROP = 25  # quiet_at drop, for the diagnostic note
 TOL = 0.03  # word timestamp tolerance, also the start slack
 DIP_SLACK = 0.02
@@ -38,20 +43,39 @@ class Missing(Exception):
     pass
 
 
-def _tail_note(nxt, starts, s, a, last, flags, notes):
-    """Hit rule for a segment whose last word runs into its end."""
+def _tail_note(nxt, starts, s, a, b, env, flags, notes):
+    """Transition and hit rules for a segment whose last word runs into its end."""
+    times, db = env
+    if nxt.trans == "fadewhite":
+        flags.append(f"needs cut or fade (tail word): next {nxt.id} fadewhite")
     if nxt.hit is None:
         notes.append("tail: hard cut ok" if nxt.trans == "cut"
                      else f"tail: next {nxt.id} {nxt.trans}, no hit")
         return
+    peaks = syllable_peaks(times, db, a, b)
+    if not peaks:
+        notes.append(f"tail: next {nxt.id} hit, no syllable peak")
+        return
+    last = peaks[-1]
     # clip time of the next segment's hit, on the same timeline verify_mix uses
     hit_t = a + visual_start(nxt, starts[nxt.id]) + (nxt.hit.get("offset") or 0) - starts[s.id]
-    if last is not None and hit_t < last + EVENT_GAP:
+    on, drop = hit_on_syllable(times, db, last, hit_t, b)
+    if on:
         flags.append(f"hit on last syllable: next {nxt.id} hit at {hit_t:.2f}, "
-                     f"last syllable {last:.2f}")
+                     f"last syllable {last:.2f}, source {drop:.1f} dB down")
     else:
-        notes.append(f"tail: next {nxt.id} hit {hit_t - last:.2f} s after last syllable"
-                     if last is not None else f"tail: next {nxt.id} hit, no syllable peak")
+        notes.append(f"tail: next {nxt.id} hit {hit_t - last:.2f} s after last syllable, "
+                     f"source {drop:.1f} dB down")
+
+
+def _next_onset(times, db, ws, w):
+    """Envelope onset of word w (searched after the previous word's start, so its own
+    onset is not taken); in continuous speech the dip before w."""
+    t0 = max((x.s for x in ws if x.s < w.s), default=w.s - NO_PREV)
+    onset = onset_before(times, db, w.s, search=min(1.5, w.s - t0))
+    if onset != w.s:
+        return onset, TOL
+    return dip_between(times, db, t0, w.s + 0.05), DIP_SLACK
 
 
 def check(p, words):
@@ -119,9 +143,14 @@ def check(p, words):
             notes.append(f"end: quiet by the {thr:.0f} dBFS floor")
         if not end_quiet and not tail:
             flags.append("end not quiet")
+        nxt_word = next((w for w in ws if b - TOL <= w.s <= b + NEXT_WORD), None)
+        if not end_quiet and nxt_word is not None:
+            # whisper stamps shouted onsets late: the sound at the cut may be the next word
+            onset, slack = _next_onset(times, db, ws, nxt_word)
+            if onset < b - slack - 1e-9:
+                flags.append(f"end cuts into next word (onset at {onset:.2f})")
         if tail and nxt is not None:
-            peaks = syllable_peaks(times, db, a, b)
-            _tail_note(nxt, starts, s, a, peaks[-1] if peaks else None, flags, notes)
+            _tail_note(nxt, starts, s, a, b, (times, db), flags, notes)
         line = head + "".join(f"  <-- {f}" for f in flags) + "".join(f"  ({n})" for n in notes)
         yield s, line, len(flags)
 

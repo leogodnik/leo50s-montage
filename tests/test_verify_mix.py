@@ -16,12 +16,19 @@ ROOT = Path(__file__).resolve().parents[1]
 VERIFY = ROOT / "skills" / "speech-safe-cuts" / "scripts" / "verify_mix.py"
 
 
-def _mix(mini_project, ss, d=1.9, bursts=((0.5, 0.8), (1.2, 1.5)), **seg_fields):
-    """Speech clip a (bursts 0.5-0.8, 1.2-1.5) from `ss` laid into out/score.wav at its start."""
+def _mix(mini_project, ss, d=1.9, bursts=((0.5, 0.8), (1.2, 1.5)), amp=None, **seg_fields):
+    """Speech clip a (bursts 0.5-0.8, 1.2-1.5, or a 440 Hz tone under amp(t)) from `ss`
+    laid into out/score.wav at its start."""
     p = mini_project
-    clip = ffm.make_test_clip(p.build_dir / "clips" / "a.mp4", 2.0, tone_hz=440,
-                              bursts=list(bursts))
-    ffm.extract_wav(clip, p.wav_dir / "a.wav")
+    if amp is None:
+        clip = ffm.make_test_clip(p.build_dir / "clips" / "a.mp4", 2.0, tone_hz=440,
+                                  bursts=list(bursts))
+        ffm.extract_wav(clip, p.wav_dir / "a.wav")
+    else:
+        sr = 48000
+        t = np.arange(int(2.5 * sr)) / sr
+        x = (amp(t) * np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16)
+        wavfile.write(p.wav_dir / "a.wav", sr, np.stack([x, x], 1))
     data = json.loads(p.path.read_text(encoding="utf-8"))
     data["edl"][2].update(ss=ss, d=d)
     for e in data["edl"]:
@@ -134,18 +141,10 @@ def test_syllable_under_loud_noise_fails(mini_project):
     assert "syllable masked at 0.8" in r.stdout
 
 
-def test_own_incoming_hit_on_first_syllable_is_exempt(mini_project):
-    # v6 s07/s11: the segment's own hit sits on its first syllable by design
+def test_masked_first_syllable_fails_even_under_own_hit(mini_project):
+    # no exemption for the segment's own incoming hit: +12 dB on the first syllable of a
+    # short insert buries it
     p, start, sr = _mix(mini_project, 0.2, d=1.6, bursts=THREE, s02={"hit": "hit"})
-    vs = start + 0.125  # visual start: middle of the 0.25 s crossfade
-    _add(p, vs, vs + 0.3, _noise(4 * _speech_amp(p)))
-    r = _verify(p)
-    assert r.returncode == 0, r.stdout + r.stderr
-    assert "own hit" in r.stdout
-
-
-def test_masked_first_syllable_without_own_hit_fails(mini_project):
-    p, start, sr = _mix(mini_project, 0.2, d=1.6, bursts=THREE)
     vs = start + 0.125
     _add(p, vs, vs + 0.3, _noise(4 * _speech_amp(p)))
     r = _verify(p)
@@ -160,3 +159,30 @@ def test_next_hit_on_last_syllable_fails(mini_project):
     r = _verify(p)
     assert r.returncode == 1, r.stdout + r.stderr
     assert "score event on last syllable" in r.stdout and "s03@" in r.stdout
+
+
+def _sustained(t):
+    # last syllable peaks at 1.2-1.3, dips 8 dB, then keeps sounding 2 dB under the peak
+    amp = np.where((t >= 0.5) & (t < 0.8), 0.5, 0.0)
+    amp = np.where((t >= 1.2) & (t < 1.3), 0.5, amp)
+    amp = np.where((t >= 1.3) & (t < 1.4), 0.2, amp)
+    return np.where((t >= 1.4) & (t < 2.0), 0.4, amp)
+
+
+def test_next_hit_on_still_sounding_last_syllable_fails(mini_project):
+    # the next segment's hit (hard cut, 1.875 s) is 0.6 s after the last syllable peak,
+    # but the source there is only 2 dB under it
+    p, _, _ = _mix(mini_project, 0, d=1.9, amp=_sustained)
+    r = _verify(p)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "score event on last syllable" in r.stdout and "s03@" in r.stdout
+
+
+def test_segment_buried_under_score_fails(mixed):
+    # noise 10 dB over the speech for the whole segment: every syllable rises together,
+    # so only the segment gain shows it
+    p, start, sr = mixed
+    _add(p, start, start + 1.9, _noise(3.2 * _speech_amp(p)))
+    r = _verify(p)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "segment buried under score (gain +" in r.stdout
