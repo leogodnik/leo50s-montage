@@ -44,3 +44,11 @@ def test_bars_has_one_line_per_window(env):
     assert len(lines) == len(times)
     assert lines[0].split()[0] == "0.00"
     assert np.isclose(times[1] - times[0], 0.02)
+
+
+def test_onset_before_long_word(tmp_path, ffmpeg_ok):
+    # the real start lies more than 0.5 s before whisper's guess
+    clip = ffm.make_test_clip(tmp_path / "long.mp4", 2.0, tone_hz=440, bursts=[(0.5, 1.6)])
+    sr, x = wavfile.read(ffm.extract_wav(clip, tmp_path / "long.wav"))
+    times, db = rms_db(x.astype(float).mean(1) / 32768, sr)
+    assert abs(onset_before(times, db, t_guess=1.2) - 0.5) <= 0.03

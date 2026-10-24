@@ -49,24 +49,21 @@ def quiet_at(times, db, t, margin=0.05, drop=25) -> bool:
     return bool(np.all(db[sel] <= peak - drop))
 
 
-def onset_before(times, db, t_guess, drop=25, search=0.5) -> float:
+def onset_before(times, db, t_guess, drop=25, search=1.5) -> float:
     """Real start of the word whisper places at t_guess (whisper lags on shouts).
 
-    Scans forward from t_guess-search, or from the last >= 40 ms gap below the threshold
-    before t_guess if that is later (so a previous word inside the search span is skipped),
-    and returns the first window that stays above the threshold for 40 ms more.
+    Finds the last >= 40 ms gap below the threshold in [t_guess-search, t_guess] (so a
+    previous word is skipped), then returns the first window after it that stays above the
+    threshold for 40 ms more. No gap in the span, or no such window: returns t_guess.
     """
     thr = peak_near(times, db, t_guess) - drop
     above = db > thr
     span = np.flatnonzero((times >= t_guess - search - EPS) & (times <= t_guess + EPS))
-    if len(span) == 0:
+    gap = next((j for j in span[::-1]
+                if j > span[0] and not above[j] and not above[j - 1]), None)
+    if gap is None:
         return float(t_guess)
-    first = span[0]
-    for j in span[::-1]:
-        if j > 0 and not above[j] and not above[j - 1]:
-            first = max(first, j)
-            break
-    for i in range(first, span[-1] + 1):
+    for i in range(gap, span[-1] + 1):
         if above[i] and i + 2 < len(db) and above[i + 1] and above[i + 2]:
             return float(times[i])
     return float(t_guess)

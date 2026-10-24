@@ -1,4 +1,5 @@
-"""Check that every speech segment survives the mix: syllables audible, no score event on the tail.
+"""Check that every speech segment survives the mix: each source syllable peak reappears
+in the mix within 40 ms, and no score event sits within 120 ms of the last one.
 
 usage: verify_mix.py <trailer.json> [--segment id ...] [--transcribe]
 exit: 0 clean, 1 envelope problems, 2 missing input. --transcribe is advisory only.
@@ -17,6 +18,7 @@ from montagelib.timeline import timeline, visual_start  # noqa: E402
 from montagelib.words import inside, load_words  # noqa: E402
 
 EVENT_GAP = 0.12
+MATCH = 0.04  # a source syllable must reappear in the mix within this distance
 PUNCT = string.punctuation + "«»—–…"
 
 
@@ -39,16 +41,23 @@ def check_envelope(p, tl, segs):
                 raise FileNotFoundError(f"wav/{s.src}.wav missing, run: build.py {p.path} wav")
             envs[s.src] = rms_db(*read_mono(wav))
         src = syllable_peaks(*envs[s.src], s.ss, s.ss + s.d)
-        mix = syllable_peaks(mt, mdb, st, st + s.d)
-        near = [f"{sid}@{t:.2f}" for sid, t in events if mix and abs(t - mix[-1]) <= EVENT_GAP]
-        flags = []
-        if len(mix) < len(src):
-            flags.append("syllables lost in mix")
-        if near:
+        mix = syllable_peaks(mt, mdb, st - MATCH, st + s.d + MATCH)
+        matched, lost = [], []
+        for t in src:
+            want = st + (t - s.ss)
+            near = [m for m in mix if abs(m - want) <= MATCH]
+            if near:
+                matched.append(min(near, key=lambda m: abs(m - want)))
+            else:
+                lost.append(t)
+        tail = [f"{sid}@{t:.2f}" for sid, t in events
+                if matched and abs(t - matched[-1]) <= EVENT_GAP]
+        flags = [f"syllable lost at {t:.2f}" for t in lost]
+        if tail:
             flags.append("score event on last syllable")
         problems += len(flags)
-        print(f"{s.id} {s.src} {st:6.2f}-{st + s.d:6.2f} peaks src/mix {len(src)}/{len(mix)}"
-              f" events near tail: {' '.join(near) or '-'}"
+        print(f"{s.id} {s.src} {st:6.2f}-{st + s.d:6.2f} peaks src/matched "
+              f"{len(src)}/{len(matched)} events near tail: {' '.join(tail) or '-'}"
               + "".join(f"  <-- {f}" for f in flags))
     return problems
 
