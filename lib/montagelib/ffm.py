@@ -36,6 +36,12 @@ def duration(path) -> float:
     return float(_probe(path, "format=duration"))
 
 
+def frame_size(path) -> tuple[int, int]:
+    """(width, height) of the first video stream."""
+    w, h = _probe(path, "stream=width,height", "-select_streams v:0").split()
+    return int(w), int(h)
+
+
 def extract_wav(src, dst, sr=48000) -> Path:
     run(f"ffmpeg -v error -y -i {shlex.quote(str(src))} -vn -ac 2 -ar {sr} "
         f"-c:a pcm_s16le {shlex.quote(str(dst))}")

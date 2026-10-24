@@ -10,6 +10,26 @@
 от и до каких звучат слои) — визуальное начало: начало сегмента при `cut`, середина
 перекрытия при `fade`/`fadewhite`. `edl` печатает начала сегментов и `total`.
 
+## Где лежит и черновик
+
+`trailer.json` кладётся в `<папка проекта>/_сборка/trailer.json`, клипы — уровнем выше
+(`"../clips/c2.mp4"` или `"../файл.mp4"`). Уже лежит `_сборка/words.json` — сборка там же.
+
+Огибающим (`speech-safe-cuts`) нужны `wav/<алиас>.wav`, шагу `wav` — загружаемый проект, а
+`edl` не может быть пустым. Поэтому порядок: черновик с одним сегментом `black`, `build.py
+<trailer.json> wav`, огибающие и грейд, потом настоящий `edl` вместо черновика.
+
+```json
+{
+  "clips": {"c2": "../clips/c2.mp4", "c7": "../clips/c7.mp4"},
+  "look": "noir",
+  "edl": [{"id": "s00", "kind": "black", "d": 1.0}]
+}
+```
+
+`words.json` уже есть и клипы с тех пор не менялись ⇒ `transcribe_words.py` не запускать:
+«один раз на проект» — это и есть готовый файл. Добавился или заменён клип ⇒ запустить.
+
 ## Верхний уровень
 
 | поле | тип | по умолчанию | смысл |
@@ -62,7 +82,8 @@
 | `whistle_from` | id сегмента или `null` | `null` | у `explosion`: свист бомбы от момента этого сегмента + 0.1 до белого кадра |
 
 `explosion` бьёт в начало сегмента + 0.3 с (момент полного белого). `riser` длиной `d − 0.15`
-идёт в музыкальную шину и приглушается под речью.
+от момента сегмента идёт в музыкальную шину и приглушается под речью; когда брать слой
+`riser` вместо удара — `synth-score/references/instruments.md`.
 
 ## Слой партитуры (`score.layers[]`)
 
@@ -113,3 +134,22 @@ hit 0.55, riser 0.3, titleboom 0.7, explosion 1.0.
 
 После любой правки длины `edl` печатает новый `total`; кадров в `out/<name>.mp4` должно
 быть `round(total × fps)`.
+
+## Проверки
+
+Пути от папки сборки, `<name>` — `output.name`.
+
+- Кадры: `ffprobe -v error -count_frames -select_streams v:0 -show_entries
+  stream=nb_read_frames -of csv=p=0 out/<name>.mp4` → ровно `round(total × fps)`.
+- Цветность: `ffprobe -v error -f lavfi -i "movie=out/<name>.mp4,signalstats" -show_entries
+  frame_tags=lavfi.signalstats.UAVG,lavfi.signalstats.VAVG,lavfi.signalstats.SATMAX -of csv=p=0
+  | sort -u` → одна строка `128,128,0` (127 тоже нейтрально). Другие числа — в кадр вернулся цвет.
+- Плёнка: на `sheet.jpg` кадр шириной ~380 px, зерна там не видно. Вырезать кусок кадра
+  1:1 и открыть через Read: `ffmpeg -v error -y -ss 5 -i out/<name>.mp4 -vf
+  "crop=640:360:(iw-640)/2:(ih-360)/2" -frames:v 1 _check/crop.png` (`_check/` создать заранее) —
+  видны зерно и царапины.
+- Грейд не слишком плоский: в сетке `match-grade` (`out/grade_grid.jpg`) есть настоящий
+  чёрный. Картинка молочная, серебристая ⇒ `match-grade`, фиксированный контраст
+  (`match-grade/references/looks/looks.md`, «Молочный нуар»).
+- `out/score.wav` на 1 с длиннее `total`: запас под хвост реверберации, `mux` режет звук по
+  видео (`-shortest`). Разница в секунду — не ошибка.

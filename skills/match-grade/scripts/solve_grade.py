@@ -3,6 +3,8 @@
 usage: solve_grade.py <trailer.json> [--target-mean 82] [--contrast alias=1.22 ...] [--out FILE]
        solve_grade.py --clips a=path b=path ... [--look noir] [--target-mean 82]
                       [--contrast alias=1.22 ...] [--out gammas.txt]
+default out: gammas.txt next to trailer.json; in clip mode in the current directory
+"before" is measured after the look at gamma/contrast 1.0; the mean is full-range 0..255
 exit: 0 all clips on target, 1 error or a clip more than 2 off the target mean (file still written)
 """
 import argparse
@@ -13,54 +15,24 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
 from montagelib.ffm import FfmpegError  # noqa: E402
 from montagelib.grade import solve, write_grade  # noqa: E402
-from montagelib.project import ProjectError, load_project  # noqa: E402
+from montagelib.gradecli import add_source_args, contrasts, sources  # noqa: E402
+from montagelib.project import ProjectError  # noqa: E402
 
 TOLERANCE = 2.0
 
 
-def pairs(items, what):
-    out = {}
-    for item in items or []:
-        alias, sep, value = item.partition("=")
-        if not sep or not alias or not value:
-            raise ValueError(f"{what}: expected alias=value, got {item!r}")
-        out[alias] = value
-    return out
-
-
-def contrasts(items):
-    out = {}
-    for alias, value in pairs(items, "--contrast").items():
-        try:
-            c = float(value)
-        except ValueError:
-            c = 0.0
-        if not c > 0:
-            raise ValueError(f"--contrast {alias}: contrast must be a positive number, got {value!r}")
-        out[alias] = c
-    return out
-
-
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("project", nargs="?", type=pathlib.Path)
-    ap.add_argument("--clips", nargs="+", metavar="ALIAS=PATH")
-    ap.add_argument("--look")
+    add_source_args(ap, grade=False)
     ap.add_argument("--target-mean", type=float, default=82.0)
     ap.add_argument("--contrast", action="append", metavar="ALIAS=C")
     ap.add_argument("--out", type=pathlib.Path)
     a = ap.parse_args(argv)
-    if (a.project is None) == (a.clips is None):
-        ap.error("give either <trailer.json> or --clips")
     try:
         groups = contrasts(a.contrast)
-        if a.project is not None:
-            p = load_project(a.project)
-            clips, look = p.clips, a.look or p.look
-            out = a.out or p.build_dir / "gammas.txt"
-        else:
-            clips = {k: pathlib.Path(v) for k, v in pairs(a.clips, "--clips").items()}
-            look, out = a.look or "noir", a.out or pathlib.Path("gammas.txt")
+        src = sources(ap, a)
+        clips, look = src.clips, src.look
+        out = a.out or (src.project.build_dir if src.project else pathlib.Path()) / "gammas.txt"
     except (ProjectError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

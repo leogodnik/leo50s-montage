@@ -1,4 +1,7 @@
 import shutil
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -108,3 +111,39 @@ def test_syllable_peaks_smoothed_and_noise_floored():
     db[16:21] = -13.0
     db[35:38] = -40.0
     assert len(syllable_peaks(times, db, 0.0, 1.0)) == 1
+
+
+ENVELOPE = (Path(__file__).resolve().parents[1] / "skills" / "speech-safe-cuts" / "scripts"
+            / "envelope.py")
+
+
+def _word_project(p, amp, ws):
+    import json
+    sr = 48000
+    t = np.arange(int(2.0 * sr)) / sr
+    x = amp(t) * np.sin(2 * np.pi * 440 * t)
+    wavfile.write(p.wav_dir / "a.wav", sr, (x * 32767).astype(np.int16))
+    (p.build_dir / "words.json").write_text(
+        json.dumps({"a": [{"w": w, "s": s, "e": e} for w, s, e in ws]}), encoding="utf-8")
+    r = subprocess.run([sys.executable, str(ENVELOPE), str(p.path), "--clip", "a",
+                        "--word", "два"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return r.stdout
+
+
+def test_envelope_prints_the_dip_in_continuous_speech(mini_project):
+    # one shout 0.0-1.5 with a short dip at 1.18 where "два" starts: onset_before cannot
+    # see a pause, the dip is the start (the rule check_cuts applies)
+    def amp(t):
+        a = np.where(t < 1.5, 0.5, 0.0)
+        a[(t >= 1.18) & (t < 1.20)] = 0.1
+        return a
+    out = _word_project(mini_project, amp, [("один", 0.0, 1.2), ("два", 1.2, 1.5)])
+    assert "dip_before = 1.18" in out
+
+
+def test_envelope_no_dip_line_after_a_pause(mini_project):
+    def amp(t):
+        return np.where(((t >= 0.5) & (t < 0.8)) | ((t >= 1.2) & (t < 1.5)), 0.5, 0.0)
+    out = _word_project(mini_project, amp, [("один", 0.5, 0.8), ("два", 1.2, 1.5)])
+    assert "onset_before = 1.2" in out and "dip_before" not in out

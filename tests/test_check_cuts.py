@@ -283,3 +283,27 @@ def test_end_before_next_word_onset_passes(speech_project):
     r = _check(p)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "tail: sound runs on to the end" in r.stdout
+
+
+def test_whisper_end_late_in_silence_is_a_note(speech_project):
+    # the burst of "один" ends at 0.8, whisper stretches it to 1.1; the end 0.95 (rendered
+    # 0.958) is in silence: whisper's late end is not a cut word
+    p = speech_project
+    _words(p, [("один", 0.5, 1.1), ("два", 1.2, 1.5)])
+    _edit(p, s02={"ss": 0, "d": 0.95}, s03={"hit": None})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "CUT WORD" not in r.stdout
+    assert "end: whisper end late (один 0.5-1.1)" in r.stdout
+    assert "problems: 0" in r.stdout
+
+
+def test_whisper_end_late_inside_the_burst_is_a_cut_word(speech_project):
+    # the same words, but the end 0.7 is inside the burst: the word is really cut
+    p = speech_project
+    _words(p, [("один", 0.5, 1.1), ("два", 1.2, 1.5)])
+    _edit(p, s02={"ss": 0, "d": 0.7}, s03={"hit": None})
+    r = _check(p)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "CUT WORD" in r.stdout
+    assert "whisper end late" not in r.stdout

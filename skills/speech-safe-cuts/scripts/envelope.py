@@ -2,6 +2,10 @@
 
 usage: envelope.py <wav> --from T --to T [--step 0.02]
        envelope.py <trailer.json> --clip alias --word TEXT [--pad 0.4] [--which N]
+onset_before is the start of the sound run that holds the word. In continuous speech
+(no pause after the previous word) that run starts at the phrase, so the script also
+prints dip_before, the last envelope dip since the previous word's start: a segment
+starting mid-phrase starts there, the rule check_cuts applies.
 """
 import argparse
 import pathlib
@@ -10,7 +14,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
-from montagelib.envelope import bars, onset_before, read_mono, rms_db, syllable_peaks  # noqa: E402
+from montagelib.envelope import (bars, dip_between, onset_before, quiet_at,  # noqa: E402
+                                 read_mono, rms_db, syllable_peaks)
 from montagelib.project import ProjectError, load_project  # noqa: E402
 from montagelib.words import load_words  # noqa: E402
 
@@ -58,7 +63,8 @@ def main(argv):
         print(f"error: {wpath} missing, run: transcribe_words.py {p.path}", file=sys.stderr)
         return 2
     want = norm(a.word)
-    hits = [w for w in load_words(wpath).get(a.clip, []) if norm(w.w).startswith(want)]
+    clip_words = load_words(wpath).get(a.clip, [])
+    hits = [w for w in clip_words if norm(w.w).startswith(want)]
     if len(hits) < a.which:
         print(f"error: word {a.word!r} #{a.which} not found in clip {a.clip!r}", file=sys.stderr)
         return 2
@@ -74,6 +80,11 @@ def main(argv):
     print(f"whisper: s={w.s} e={w.e}")
     print(f"onset_before = {onset:.2f}")
     print("syllable_peaks = [" + ", ".join(f"{t:.2f}" for t in peaks) + "]")
+    prev = max((x for x in clip_words if x.s < w.s), key=lambda x: x.s, default=None)
+    grid = times[(times >= prev.s) & (times <= w.s)] if prev is not None else []
+    if prev is not None and not any(quiet_at(times, db, t) for t in grid):
+        dip = dip_between(times, db, prev.s, w.s + 0.05)
+        print(f"dip_before = {dip:.2f} (no pause after {prev.w!r}: a start mid-phrase goes here)")
     return 0
 
 
