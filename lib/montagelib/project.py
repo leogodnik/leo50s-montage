@@ -130,8 +130,15 @@ def _parse_hit(sid: str, raw, ids: set, problems: list[str]) -> Optional[dict]:
     if wf is not None and wf not in ids:
         problems.append(f"edl {sid}: hit.whistle_from {wf!r} is not a segment id")
     gain = raw.get("gain")
+    if gain is not None and not _num(gain):
+        problems.append(f"edl {sid}: hit.gain must be a number, got {gain!r}")
+        gain = None
+    offset = raw.get("offset", 0)
+    if not _num(offset):
+        problems.append(f"edl {sid}: hit.offset must be a number, got {offset!r}")
+        offset = 0
     return {"type": t, "gain": None if gain is None else float(gain),
-            "offset": raw.get("offset", 0), "whistle_from": wf}
+            "offset": offset, "whistle_from": wf}
 
 
 def _parse_segment(i: int, e, aliases: set, ids: set, problems: list[str]) -> Optional[Segment]:
@@ -176,6 +183,16 @@ def _parse_segment(i: int, e, aliases: set, ids: set, problems: list[str]) -> Op
     for f in fx:
         if f not in FX:
             problems.append(f"{label}: unknown fx {f!r} (allowed: {' '.join(FX)})")
+    nums = {}
+    for key, default in (("ov", 0), ("ss", 0), ("shake", 1.0), ("duck", 0.5),
+                         ("amb", None), ("fade_in", 0)):
+        v = e.get(key, default)
+        if v is not None and not _num(v):
+            problems.append(f"{label}: {key} must be a number, got {v!r}")
+            v = default
+        nums[key] = v
+    if _num(d) and d > 0 and not (0 <= nums["ov"] < d):
+        problems.append(f"{label}: ov must satisfy 0 <= ov < d (ov={nums['ov']!r}, d={d!r})")
     lines = e.get("lines")
     if lines is not None:
         try:
@@ -184,19 +201,23 @@ def _parse_segment(i: int, e, aliases: set, ids: set, problems: list[str]) -> Op
             problems.append(f"{label}: lines must be a list of [text, size]")
             lines = None
     return Segment(
-        id=sid, kind=kind, d=d, ov=e.get("ov", 0), trans=trans, src=src,
-        ss=e.get("ss", 0), fx=list(fx), shake=e.get("shake", 1.0),
-        speech=bool(e.get("speech", False)), duck=e.get("duck", 0.5),
-        amb=e.get("amb"), hit=_parse_hit(sid, e.get("hit"), ids, problems),
+        id=sid, kind=kind, d=d, ov=nums["ov"], trans=trans, src=src,
+        ss=nums["ss"], fx=list(fx), shake=nums["shake"],
+        speech=bool(e.get("speech", False)), duck=nums["duck"],
+        amb=nums["amb"], hit=_parse_hit(sid, e.get("hit"), ids, problems),
         text=e.get("text"), lines=lines, small=bool(e.get("small", False)),
-        style=style, bg=bg, bg_src=bg_src, fade_in=e.get("fade_in", 0))
+        style=style, bg=bg, bg_src=bg_src, fade_in=nums["fade_in"])
 
 
 def _check_score(score, ids: set, problems: list[str]) -> None:
     if not isinstance(score, dict):
         problems.append("score: must be an object")
         return
-    for n, layer in enumerate(score.get("layers", [])):
+    layers = score.get("layers", [])
+    if not isinstance(layers, list):
+        problems.append(f"score.layers: must be a list, got {layers!r}")
+        layers = []
+    for n, layer in enumerate(layers):
         if not isinstance(layer, dict):
             problems.append(f"score.layers[{n}]: must be an object")
             continue
@@ -205,7 +226,11 @@ def _check_score(score, ids: set, problems: list[str]) -> None:
             problems.append(f"score.layers[{n}]: from {fr!r} is not a segment id")
         if to != "end" and to not in ids:
             problems.append(f"score.layers[{n}]: to {to!r} is not a segment id or 'end'")
-    for t in score.get("hits", {}):
+    hits = score.get("hits", {})
+    if not isinstance(hits, dict):
+        problems.append("score.hits: must be an object {type: gain}")
+        hits = {}
+    for t in hits:
         if t not in HIT_TYPES:
             problems.append(f"score.hits: unknown hit type {t!r}")
 
@@ -225,7 +250,12 @@ def load_project(path: Path) -> Project:
     if not isinstance(raw_clips, dict):
         problems.append("clips: must be an object {alias: path}")
         raw_clips = {}
-    clips = {a: (base / p) for a, p in raw_clips.items()}
+    clips = {}
+    for a, p in raw_clips.items():
+        if isinstance(p, str) and p:
+            clips[a] = base / p
+        else:
+            problems.append(f"clips.{a}: path must be a string, got {p!r}")
 
     fps = data.get("fps", 24)
     if not isinstance(fps, int) or isinstance(fps, bool) or fps <= 0:
@@ -243,12 +273,22 @@ def load_project(path: Path) -> Project:
     grade_file = data.get("grade")
     grade = _parse_grade(base / grade_file, problems) if grade_file else {}
 
-    fonts = {**DEFAULT_FONTS, **(data.get("fonts") or {})}
+    raw_fonts = data.get("fonts") or {}
+    if not isinstance(raw_fonts, dict):
+        problems.append(f"fonts: must be an object, got {raw_fonts!r}")
+        raw_fonts = {}
+    fonts = {**DEFAULT_FONTS, **raw_fonts}
     for role, spec in fonts.items():
-        if not _font_exists(spec):
+        if not isinstance(spec, str):
+            problems.append(f"fonts.{role}: must be a string, got {spec!r}")
+        elif not _font_exists(spec):
             problems.append(f"fonts.{role}: font file not found: {spec}")
 
-    output = {**DEFAULT_OUTPUT, **(data.get("output") or {})}
+    raw_output = data.get("output") or {}
+    if not isinstance(raw_output, dict):
+        problems.append(f"output: must be an object, got {raw_output!r}")
+        raw_output = {}
+    output = {**DEFAULT_OUTPUT, **raw_output}
 
     raw_edl = data.get("edl", [])
     if not isinstance(raw_edl, list) or not raw_edl:
@@ -261,7 +301,7 @@ def load_project(path: Path) -> Project:
             problems.append(f"edl: duplicate id {e['id']!r}")
         if isinstance(e, dict):
             seen.add(e.get("id"))
-    aliases = set(clips)
+    aliases = set(raw_clips)
     edl = [s for i, e in enumerate(raw_edl)
            if (s := _parse_segment(i, e, aliases, ids, problems)) is not None]
 

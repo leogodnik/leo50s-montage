@@ -84,3 +84,30 @@ def test_defaults():
     assert pr.fonts["card"] == "/System/Library/Fonts/HelveticaNeue.ttc#1"
     assert (pr.width, pr.height) == (1920, 1080)
     assert pr.by_id("s03").fade_in == 0
+
+
+def test_malformed_types_become_problems(tmp_path):
+    def m(d):
+        d["edl"][3]["hit"] = {"type": "boom", "gain": "loud-gain"}
+        d["edl"][2]["ov"] = "slow-ov"
+        d["clips"]["b"] = 42
+        d["fonts"] = ["font-list"]
+        d["output"] = "output-str"
+        d["score"]["layers"] = "layers-str"
+    with pytest.raises(ProjectError) as ei:
+        load_project(_write(tmp_path, m))
+    problems = ei.value.problems
+    assert len(problems) == 6
+    msg = str(ei.value)
+    for needle in ("loud-gain", "slow-ov", "42", "font-list", "output-str", "layers-str"):
+        assert needle in msg
+
+
+def test_ov_bounds(tmp_path):
+    def m(d):
+        d["edl"][1]["ov"] = -0.1
+        d["edl"][2]["ov"] = 1.5  # d == 1.5
+    with pytest.raises(ProjectError) as ei:
+        load_project(_write(tmp_path, m))
+    assert len(ei.value.problems) == 2
+    assert all("ov" in p for p in ei.value.problems)
