@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "lib"))
 
 from montagelib.ffm import FfmpegError  # noqa: E402
-from montagelib.grade import measure, solve, write_grade  # noqa: E402
+from montagelib.grade import solve, write_grade  # noqa: E402
 from montagelib.project import ProjectError, load_project  # noqa: E402
 
 TOLERANCE = 2.0
@@ -28,6 +28,19 @@ def pairs(items, what):
     return out
 
 
+def contrasts(items):
+    out = {}
+    for alias, value in pairs(items, "--contrast").items():
+        try:
+            c = float(value)
+        except ValueError:
+            c = 0.0
+        if not c > 0:
+            raise ValueError(f"--contrast {alias}: contrast must be a positive number, got {value!r}")
+        out[alias] = c
+    return out
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("project", nargs="?", type=pathlib.Path)
@@ -40,7 +53,7 @@ def main(argv):
     if (a.project is None) == (a.clips is None):
         ap.error("give either <trailer.json> or --clips")
     try:
-        groups = {k: float(v) for k, v in pairs(a.contrast, "--contrast").items()}
+        groups = contrasts(a.contrast)
         if a.project is not None:
             p = load_project(a.project)
             clips, look = p.clips, a.look or p.look
@@ -60,10 +73,9 @@ def main(argv):
             print(f"error: clip not found: {m}", file=sys.stderr)
         return 1
     try:
-        before = {k: measure(v, look, 1.0, 1.0) for k, v in clips.items()}
-        result = solve(clips, look, target_mean=a.target_mean, contrast_groups=groups)
-        after = {k: measure(clips[k], look, *gc) for k, gc in result.items()}
-    except (FfmpegError, FileNotFoundError) as e:
+        result, before, after = solve(clips, look, target_mean=a.target_mean,
+                                      contrast_groups=groups, return_stats=True)
+    except (FfmpegError, FileNotFoundError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     write_grade(out, result)

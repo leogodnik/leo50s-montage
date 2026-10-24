@@ -1,10 +1,9 @@
 """Full graded copies of every clip (gamma/contrast + look), audio kept.
 
 usage: render_graded.py <trailer.json> [--out DIR]
-default out: <clips' common folder>/graded_<look>; files <alias>_<look>_<stem>.mp4
+default out: <build_dir>/graded_<look>; files <alias>_<look>_<stem>.mp4
 """
 import argparse
-import os
 import pathlib
 import shlex
 import sys
@@ -33,11 +32,7 @@ def main(argv):
             print(f"error: clip not found: {m}", file=sys.stderr)
         return 1
     tag = pathlib.Path(p.look).stem
-    if a.out:
-        out_dir = a.out
-    else:
-        parent = pathlib.Path(os.path.commonpath([v.parent for v in p.clips.values()]))
-        out_dir = parent / f"graded_{tag}"
+    out_dir = a.out or p.build_dir / f"graded_{tag}"
     out_dir.mkdir(parents=True, exist_ok=True)
     for k, src in p.clips.items():
         g, c = p.grade.get(k, (1.0, 1.0))

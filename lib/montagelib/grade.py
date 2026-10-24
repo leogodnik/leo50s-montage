@@ -12,6 +12,8 @@ from .ffm import FfmpegError
 from .looks import load_look
 
 GAMMA_MIN, GAMMA_MAX = 0.1, 10.0  # ffmpeg eq's gamma range
+CONTRAST_MIN, CONTRAST_MAX = 0.25, 4.0
+MAX_STEP = math.log(2)  # largest change of ln(gamma) per step
 
 
 def measure(src: Path, look: str, gamma: float, contrast: float,
@@ -34,41 +36,60 @@ def _loglum(m: float) -> float:
 
 def solve(clips: dict[str, Path], look: str, target_mean=82.0,
           target_std: float | None = None, contrast_groups: dict[str, float] | None = None,
-          iters=4) -> dict[str, tuple[float, float]]:
-    """Per-clip (gamma, contrast) before the look.
+          iters=4, return_stats=False):
+    """Per-clip (gamma, contrast) before the look: {alias: (gamma, contrast)}.
 
     Contrast goes toward target_std (default: mean std of the clips at 1.0/1.0) unless fixed
-    by contrast_groups. Gamma follows g *= log(mean/255) / log(target/255), raised to 1/k
-    where k is the exponent measured from the previous gamma step (k = 1 on the first step,
-    which is the plain formula): the look's curve flattens the response, and with k = 1 a
-    dark or bright clip would still be far off after four steps.
+    by contrast_groups; it is clamped to [CONTRAST_MIN, CONTRAST_MAX], so a flat clip cannot
+    run away. Gamma follows g *= log(mean/255) / log(target/255), raised to 1/k where k is
+    the exponent measured from the previous gamma step (k = 1 on the first step, which is the
+    plain formula): the look's curve flattens the response, and with k = 1 a dark or bright
+    clip would still be far off after four steps. A gamma step changes ln g by at most ln 2.
+    The best measured (gamma, contrast) is returned; a clip within 0.5 of the target stops early.
+
+    With return_stats=True returns (result, before, after), where before/after map each alias
+    to (mean, std) at 1.0/1.0 and at the returned values.
     """
     groups = contrast_groups or {}
-    start = {a: measure(src, look, 1.0, 1.0) for a, src in clips.items()}
+    unknown = sorted(set(groups) - set(clips))
+    if unknown:
+        raise ValueError(f"contrast_groups: no such clip alias: {', '.join(unknown)}")
+    before = {a: measure(src, look, 1.0, 1.0) for a, src in clips.items()}
     if target_std is None:
-        target_std = float(np.mean([s for _, s in start.values()]))
+        target_std = float(np.mean([s for _, s in before.values()]))
     goal = _loglum(target_mean)
-    result = {}
+    result, after = {}, {}
     for alias, src in clips.items():
+        fixed = alias in groups
         g, k = 1.0, 1.0
-        if alias in groups:
-            c = float(groups[alias])
-            m, s = measure(src, look, g, c)
-        else:
-            c = 1.0
-            m, s = start[alias]
+        c = float(groups[alias]) if fixed else 1.0
+        m, s = measure(src, look, g, c) if fixed else before[alias]
+        best = (abs(m - target_mean), g, c, m, s)
+
+        def keep(g, c, m, s):
+            nonlocal best
+            if abs(m - target_mean) <= best[0]:  # ties: the later, more solved point
+                best = (abs(m - target_mean), g, c, m, s)
+
         for _ in range(iters):
-            if alias not in groups:
-                c = round(c * target_std / max(s, 1e-6), 3)
+            if best[0] < 0.5:
+                break
+            if not fixed:
+                c = round(min(max(c * target_std / max(s, 1e-6), CONTRAST_MIN), CONTRAST_MAX), 3)
                 m, s = measure(src, look, g, c)
+                keep(g, c, m, s)
             g0, m0 = g, m
-            g = round(min(max(g * math.exp((_loglum(m) - goal) / k), GAMMA_MIN), GAMMA_MAX), 3)
+            step = min(max((_loglum(m) - goal) / k, -MAX_STEP), MAX_STEP)
+            g = round(min(max(g * math.exp(step), GAMMA_MIN), GAMMA_MAX), 3)
             m, s = measure(src, look, g, c)
-            step = math.log(g) - math.log(g0)
-            if abs(step) > 0.02:
-                k = min(max(-(_loglum(m) - _loglum(m0)) / step, 0.2), 5.0)
+            keep(g, c, m, s)
+            dlog = math.log(g) - math.log(g0)
+            if abs(dlog) > 0.02:
+                k = min(max(-(_loglum(m) - _loglum(m0)) / dlog, 0.2), 5.0)
+        _, g, c, m, s = best
         result[alias] = (round(g, 3), round(c, 3))
-    return result
+        after[alias] = (m, s)
+    return (result, before, after) if return_stats else result
 
 
 def parse_grade(text: str, name: str = "grade") -> tuple[dict[str, tuple[float, float]], list[str]]:
