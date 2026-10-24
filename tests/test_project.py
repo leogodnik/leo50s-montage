@@ -139,3 +139,33 @@ def test_unknown_instrument_is_a_problem(tmp_path):
         load_project(_write(tmp_path, m))
     assert len(ei.value.problems) == 1
     assert "kazoo" in str(ei.value)
+
+
+def _layer_problems(tmp_path, **layer):
+    def m(d):
+        d["score"]["layers"][0].update(layer)
+    with pytest.raises(ProjectError) as ei:
+        load_project(_write(tmp_path, m))
+    return ei.value.problems
+
+
+def test_ramp_id_must_be_a_segment(tmp_path):
+    problems = _layer_problems(tmp_path, ramp=[["s00", 0.1], ["zzz-id", 0.3]])
+    assert len(problems) == 1 and "zzz-id" in problems[0]
+
+
+def test_empty_ramp_is_a_problem(tmp_path):
+    problems = _layer_problems(tmp_path, ramp=[])
+    assert len(problems) == 1 and "ramp" in problems[0]
+
+
+def test_unknown_param_is_a_problem(tmp_path):
+    problems = _layer_problems(tmp_path, params={"wobble": 2})
+    assert len(problems) == 1 and "wobble" in problems[0]
+
+
+def test_known_params_are_valid(tmp_path):
+    def m(d):
+        d["score"]["layers"].append({"instrument": "ostinato", "from": "s01", "to": "end",
+                                     "params": {"bpm": 120, "pattern": [55.0]}})
+    assert len(load_project(_write(tmp_path, m)).score["layers"]) == 2

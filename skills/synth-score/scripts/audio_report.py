@@ -39,6 +39,9 @@ def main(argv):
         return 1
     r = subprocess.run(["ffmpeg", "-nostats", "-i", str(wav), "-af", "ebur128=peak=true",
                         "-f", "null", "-"], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"error: ebur128 failed\n{r.stderr[-2000:]}", file=sys.stderr)
+        return 1
     summary = r.stderr.split("Summary:")[-1]
     for line in summary.splitlines():
         if line.strip().startswith(("I:", "LRA:", "Peak:")):

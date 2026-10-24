@@ -83,3 +83,11 @@ def test_peak_limited(mini_project):
 def test_missing_wav_names_the_wav_step(mini_project):
     with pytest.raises(FileNotFoundError, match=r"build\.py .* wav"):
         build_audio(mini_project)
+
+
+def test_layer_ending_before_start_raises(mini_project):
+    def m(d):
+        d["score"]["layers"] = [{"instrument": "drone", "from": "s04", "to": "s01"}]
+    p = _prepared(mini_project, m)
+    with pytest.raises(ValueError, match=r"drone s04\.\.s01"):
+        build_audio(p)

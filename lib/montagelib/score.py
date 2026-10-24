@@ -11,8 +11,7 @@ from .synth import (EVENTS, INSTRUMENTS, SR, add, env_asr, expdec, lp, noise, re
                     reverb, riser, whistle)
 from .timeline import timeline, visual_start
 
-# riser is 1/3 of the original instrument level (synth.LOUD), so 0.9 here is the original 0.3
-DEFAULT_HIT_GAINS = {"boom": 0.75, "bigboom": 1.0, "braam": 0.7, "hit": 0.55, "riser": 0.9,
+DEFAULT_HIT_GAINS = {"boom": 0.75, "bigboom": 1.0, "braam": 0.7, "hit": 0.55, "riser": 0.3,
                      "titleboom": 0.7, "explosion": 1.0}
 DEFAULT_MASTER = {"speech_rms": 0.09, "ambience_default": 0.35, "target_peak": 0.92,
                   "fade_out": 1.2}
@@ -23,7 +22,8 @@ def _layer(music, layer, T):
     t0 = T[layer["from"]]
     d = T[layer["to"]] - layer.get("trim_end", 0.0) - t0
     if d <= 0:
-        return
+        raise ValueError(f"score layer {layer['instrument']} {layer['from']}..{layer['to']}: "
+                         f"ends {-d:.2f} s before it starts (check from/to/trim_end)")
     x = INSTRUMENTS[layer["instrument"]](d, **layer.get("params", {}))
     x = x * env_asr(len(x), layer.get("attack", 3.0), layer.get("release", 0.4))
     if "ramp" in layer:

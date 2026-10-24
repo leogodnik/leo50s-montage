@@ -11,7 +11,7 @@ def test_instrument_length_and_finite(name):
     x = INSTRUMENTS[name](2.0)
     assert len(x) == 96000
     assert np.all(np.isfinite(x))
-    assert np.max(np.abs(x)) <= 1.5
+    assert np.max(np.abs(x)) <= 5
 
 
 @pytest.mark.parametrize("name", sorted(EVENTS))
@@ -19,7 +19,7 @@ def test_events_finite(name):
     x = EVENTS[name]()
     assert len(x) > 0
     assert np.all(np.isfinite(x))
-    assert np.max(np.abs(x)) <= 1.5
+    assert np.max(np.abs(x)) <= 5
 
 
 @pytest.mark.parametrize("bpm", [None, 60])

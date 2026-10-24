@@ -1,6 +1,7 @@
 """trailer.json schema: dataclasses and hand-written validation (all problems at once)."""
 from __future__ import annotations
 
+import inspect
 import json
 import math
 from dataclasses import dataclass, field
@@ -232,6 +233,26 @@ def _check_score(score, ids: set, problems: list[str]) -> None:
             problems.append(f"score.layers[{n}]: from {fr!r} is not a segment id")
         if to != "end" and to not in ids:
             problems.append(f"score.layers[{n}]: to {to!r} is not a segment id or 'end'")
+        if "ramp" in layer:
+            ramp = layer["ramp"]
+            if not isinstance(ramp, list) or not ramp:
+                problems.append(f"score.layers[{n}]: ramp must be a non-empty list of [id, gain], "
+                                f"got {ramp!r}")
+            else:
+                for pt in ramp:
+                    if not (isinstance(pt, list) and len(pt) == 2 and _num(pt[1])):
+                        problems.append(f"score.layers[{n}]: ramp point must be [id, gain], got {pt!r}")
+                    elif pt[0] not in ids:
+                        problems.append(f"score.layers[{n}]: ramp id {pt[0]!r} is not a segment id")
+        params = layer.get("params", {})
+        if not isinstance(params, dict):
+            problems.append(f"score.layers[{n}]: params must be an object, got {params!r}")
+        elif inst in INSTRUMENTS:
+            allowed = list(inspect.signature(INSTRUMENTS[inst]).parameters)[1:]  # after d
+            for k in params:
+                if k not in allowed:
+                    problems.append(f"score.layers[{n}]: {inst} has no param {k!r} "
+                                    f"(allowed: {' '.join(allowed) or 'none'})")
     hits = score.get("hits", {})
     if not isinstance(hits, dict):
         problems.append("score.hits: must be an object {type: gain}")

@@ -7,9 +7,6 @@ from scipy.io import wavfile
 
 SR = 48000
 rng = np.random.default_rng(7)  # deterministic noise: the same project gives the same score
-# drone and riser bodies peak at 3-4; their output is divided by LOUD so every instrument stays
-# under 1.5 (a layer gain of LOUD * g reproduces the original level g)
-LOUD = 3.0
 
 
 def tvec(d):
@@ -135,7 +132,7 @@ def riser(d=4.0):
         add(tk, hp(noise(0.012), 2500) * expdec(0.012, 0.004), pos, 0.6)
         pos += gap
         gap = max(gap * 0.88, 0.045)
-    return (x + tone + tk) / LOUD
+    return x + tone + tk
 
 
 def sweep_noise(d, f_of_t, lo=0.8, hi=1.25):
@@ -204,7 +201,7 @@ def drone(d):
     x += 0.5 * sine(36.7, t)
     # slow breathing high component
     x += 0.12 * hp(lp(saw(146.8, t) + saw(147.3, t), 900), 120) * (0.5 + 0.5 * np.sin(2 * np.pi * 0.07 * t + 1))
-    return x / LOUD
+    return x
 
 
 OSTINATO_PATTERN = [73.4, 73.4, 73.4, 73.4, 87.3, 87.3, 65.4, 65.4]
