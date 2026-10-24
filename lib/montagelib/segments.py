@@ -25,6 +25,11 @@ def _q(path) -> str:
     return shlex.quote(str(path))
 
 
+def _grade(alias: str, p: Project) -> str:
+    g, c = p.grade.get(alias, (1.0, 1.0))
+    return f"eq=gamma={g}:contrast={c},{load_look(p.look)}"
+
+
 def _clip_chain(seg: Segment, p: Project) -> list[str]:
     fps = p.fps
     chain = []
@@ -36,8 +41,7 @@ def _clip_chain(seg: Segment, p: Project) -> list[str]:
                      f"setpts={k}*PTS,fps={fps}")
     else:
         chain.append(f"trim=start={seg.ss}:duration={seg.d},setpts=PTS-STARTPTS")
-    g, c = p.grade.get(seg.src, (1.0, 1.0))
-    chain.append(f"eq=gamma={g}:contrast={c},{load_look(p.look)}")
+    chain.append(_grade(seg.src, p))
     if "shake" in seg.fx:
         a = seg.shake
         chain.append(f"crop=1216:684:x='32+{a}*(26*sin(t*47)+18*sin(t*71+1)+8*sin(t*131))'"
@@ -64,15 +68,17 @@ def segment_cmd(seg: Segment, p: Project) -> str:
         return (f"ffmpeg -v error -y {color.format('white')} -frames:v {n} "
                 f"-vf \"fade=t=out:st=0.25:d=0.85,{tail}\" {X264} {out}")
     if seg.kind == "title" and seg.style == "painted":
-        png = _q(p.cards_dir / "title_paint.png")
+        png = _q(p.cards_dir / f"title_paint_{seg.id}.png")
         if seg.bg == "clip":
             bg = f"-ss {seg.ss} -i {_q(p.clips[seg.bg_src])}"
+            bg_grade = _grade(seg.bg_src, p) + ","
         else:
             bg = color.format("black")
+            bg_grade = ""
         # slam in, slow drift, fade out
         zp = (f"zoompan=z='if(lt(on,5),1.28-0.056*on,1.0+0.0007*(on-5))':{CENTER}"
               f":d=1:s={W}x{H}:fps={fps}")
-        fc = (f"[0:v]scale={W}:{H},setsar=1[bg];[bg][1:v]overlay=0:0:format=auto,{zp},"
+        fc = (f"[0:v]{bg_grade}scale={W}:{H},setsar=1[bg];[bg][1:v]overlay=0:0:format=auto,{zp},"
               f"fade=t=out:st={seg.d - 0.9}:d=0.9,{tail}")
         return (f"ffmpeg -v error -y {bg} -loop 1 -framerate {fps} -i {png} -frames:v {n} "
                 f"-filter_complex \"{fc}\" {X264} {out}")

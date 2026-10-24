@@ -3,20 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-from .paint_title import paint_title
+from .paint_title import SIDE_MARGIN, load_font as _font, paint_title
 from .project import Project, Segment
 
 CARD_FILL = (228, 228, 228)
 TITLE_FILL = (235, 235, 235)
-SIDE_MARGIN = 120
-
-
-def _font(spec: str, size: int) -> ImageFont.FreeTypeFont:
-    path, _, index = spec.partition("#")
-    return ImageFont.truetype(path, size, index=int(index or 0))
-
 
 def _tracked_width(text: str, font, track_em: float) -> float:
     widths = [font.getlength(ch) for ch in text]
@@ -45,7 +38,7 @@ def render_card(seg: Segment, p: Project) -> Path:
     W, H = p.width, p.height
     max_w = W - 2 * SIDE_MARGIN
     if seg.kind == "title" and seg.style == "painted":
-        out = p.cards_dir / "title_paint.png"
+        out = p.cards_dir / f"title_paint_{seg.id}.png"
         return paint_title(seg.text, out, p.fonts["title"], size=(W, H),
                            stretch_to=round(620 * H / 1080))
     if seg.kind not in ("card", "title"):

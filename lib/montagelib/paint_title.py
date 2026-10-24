@@ -6,6 +6,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+SIDE_MARGIN = 120
+
+
+def load_font(spec: str, size: int) -> ImageFont.FreeTypeFont:
+    """Font spec is a path, optionally with `#N` for a face index inside a collection."""
+    path, _, index = spec.partition("#")
+    return ImageFont.truetype(path, size, index=int(index or 0))
+
 
 def paint_title(text: str, out: Path, font_path: str, size=(1920, 1080), seed=3,
                 drip_prob=0.03, stretch_to=620) -> Path:
@@ -20,9 +28,15 @@ def paint_title(text: str, out: Path, font_path: str, size=(1920, 1080), seed=3,
         return (a - a.mean()) / (a.std() + 1e-6)
 
     # 1. base glyphs, tracked, then stretched vertically so the letters are tall and narrow
-    fsize = 430
+    # sized for the frame width; shrinks proportionally if the text would leave the margins
+    fsize = round(430 * W / 1920)
+    font = load_font(font_path, fsize)
+    total = sum(font.getlength(ch) for ch in text) + fsize * 0.07 * (len(text) - 1)
+    max_w = W - 2 * SIDE_MARGIN
+    if total > max_w:
+        fsize = max(1, int(fsize * max_w / total))
+        font = load_font(font_path, fsize)
     track = fsize * 0.07
-    font = ImageFont.truetype(font_path.split("#", 1)[0], fsize)
     widths = [font.getlength(ch) for ch in text]
     total = sum(widths) + track * (len(text) - 1)
     canvas = Image.new("L", (W, 700), 0)
@@ -42,7 +56,8 @@ def paint_title(text: str, out: Path, font_path: str, size=(1920, 1080), seed=3,
     soft = np.asarray(Image.fromarray((mask * 255).astype(np.uint8))
                       .filter(ImageFilter.GaussianBlur(2.5)), np.float32) / 255
     edge = soft + 0.09 * smooth_noise((H, W), 1.6) + 0.05 * smooth_noise((H, W), 5.0)
-    ragged = (edge > 0.5).astype(np.float32)
+    # only near the glyphs: far from them noise alone can cross the threshold (stray specks)
+    ragged = ((edge > 0.5) & (soft > 0.02)).astype(np.float32)
 
     # 3. vertical brush streaks inside the letters (dry-brush gaps)
     col = smooth_noise((1, W), 1.2)[0]
