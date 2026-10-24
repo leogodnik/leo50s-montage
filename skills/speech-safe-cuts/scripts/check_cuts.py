@@ -15,8 +15,9 @@ the next segment enters with "cut" or a plain "fade", never "fadewhite", and its
 lands at least 0.12 s after the last syllable peak with the source there (or at the cut,
 if the hit is later) 7 dB under that peak ("hit on last syllable" otherwise).
 A word that straddles only the end, with the end quiet, gets the note
-"end: whisper end late (<word> <s>-<e>)" instead of CUT WORD: whisper stretches word ends
-into the silence after them. A word straddling the start is always CUT WORD.
+"end: whisper end late (<word> <s>-<e>)" instead of CUT WORD when no window from the end
+to whisper's end of the word is loud: whisper stretches word ends into the silence after
+them. Such a word keeps the tail rules above. A word straddling the start is always CUT WORD.
 A loud end must not cut into the next word: a word whisper starts within 0.4 s after the
 end needs its envelope onset (or, in continuous speech, the dip before it) at the end
 or later ("end cuts into next word").
@@ -106,8 +107,10 @@ def check(p, words):
             times, db = envs[s.src]
             end_quiet, thr, loud = quiet_detail(times, db, b)
             # whisper stretches word ends into the silence after them: a word straddling
-            # only the end, with the envelope quiet there, has really ended
-            late = [w for w in cut if not w.s + TOL < a < w.e - TOL] if end_quiet else []
+            # only the end, quiet there and with no loud window up to its whisper end,
+            # has really ended
+            late = [w for w in cut if end_quiet and not w.s + TOL < a < w.e - TOL
+                    and not (db[(times >= b) & (times <= w.e)] > thr).any()]
             cut = [w for w in cut if w not in late]
         head = (f"{s.id} {s.src} {a:5.2f}-{b:5.2f} words: "
                 f"{' '.join(w.w for w in ins + late)}")
@@ -141,7 +144,8 @@ def check(p, words):
                 flags.append(f"start cuts into a word (dip {t_min:.2f})")
         elif not start_quiet:
             notes.append("start: not quiet (previous sound tail)")
-        tail = bool(ins) and ins[-1].e > b - TAIL
+        # a late word still runs into the cut as far as transitions and hits go
+        tail = bool(late) or (bool(ins) and ins[-1].e > b - TAIL)
         if not end_quiet and ins and not tail:
             # whisper ends words early on shouts: no quiet window between the last word
             # and the end means its sound runs on into the cut

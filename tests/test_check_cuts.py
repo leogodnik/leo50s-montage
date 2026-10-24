@@ -307,3 +307,34 @@ def test_whisper_end_late_inside_the_burst_is_a_cut_word(speech_project):
     assert r.returncode == 1, r.stdout + r.stderr
     assert "CUT WORD" in r.stdout
     assert "whisper end late" not in r.stdout
+
+
+def test_late_word_keeps_the_tail_rule(speech_project):
+    # whisper ends "один" at 1.1 after the quiet end 0.95: the word still counts as running
+    # into the cut, so a fadewhite with a hit that lands on it is a problem
+    p = speech_project
+    _words(p, [("один", 0.5, 1.1), ("два", 1.2, 1.5)])
+    _edit(p, s02={"ss": 0, "d": 0.95}, s03={"trans": "fadewhite", "ov": 0.5})
+    r = _check(p)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "end: whisper end late (один 0.5-1.1)" in r.stdout
+    assert "needs cut or fade (tail word): next s03 fadewhite" in r.stdout
+    assert "hit on last syllable: next s03" in r.stdout
+    _edit(p, s03={"trans": "cut", "hit": None})
+    r = _check(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "end: whisper end late (один 0.5-1.1)" in r.stdout
+    assert "tail: hard cut ok" in r.stdout
+
+
+def test_late_word_with_sound_before_its_whisper_end_is_a_cut_word(speech_project):
+    # quiet at the end 0.95, but the sound comes back at 1.03, before whisper's end 1.1:
+    # the word is not over, the end cuts it
+    import numpy as np
+    p = speech_project
+    _shape(p, lambda t: np.where(((t >= 0.5) & (t < 0.8)) | ((t >= 1.03) & (t < 1.1)), 0.5, 0.0))
+    _words(p, [("один", 0.5, 1.1), ("два", 1.2, 1.5)])
+    _edit(p, s02={"ss": 0, "d": 0.95}, s03={"hit": None})
+    r = _check(p)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "CUT WORD" in r.stdout and "whisper end late" not in r.stdout

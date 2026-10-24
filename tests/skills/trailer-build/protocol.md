@@ -15,7 +15,7 @@
 
 ## Вопросы автору → что изменилось
 
-1. check_cuts берёт конец слова у whisper (`CUT WORD` у «помогает.» при тишине с 8.10). → `check_cuts.py`: слово, пересекающее только конец, при тихом конце — пометка `end: whisper end late (<слово> s-e)`, не проблема; пересечение начала по-прежнему `CUT WORD`. Тесты `test_whisper_end_late_*`. На копии фикстуры с `d` 7.17: `(end: whisper end late (помогает. 7.36-8.92))`, `problems: 0`.
+1. check_cuts берёт конец слова у whisper (`CUT WORD` у «помогает.» при тишине с 8.10). → `check_cuts.py`: слово, пересекающее только конец, при тихом конце — пометка `end: whisper end late (<слово> s-e)`, не проблема, если до whisper-конца слова нет громкого окна; хвостовое правило для такого слова действует; пересечение начала по-прежнему `CUT WORD`. Тесты `test_whisper_end_late_*`. На копии фикстуры с `d` 7.17: `(end: whisper end late (помогает. 7.36-8.92))  (end: quiet by the -45 dBFS floor)  (tail: next s02 hit 0.47 s after last syllable, source 27.0 dB down)`, `problems: 0`.
 2. speech-safe-cuts до `wav`, `edl` не может быть пуст. → `SKILL.md`, «Поток», шаг 2: черновик с одним `black`, затем `wav`; настоящий `edl` — шаг 5. `project-format.md`, «Где лежит и черновик» (образец JSON).
 3. `onset_before` внутри сплошной речи даёт начало фразы. → `envelope.py` печатает `dip_before` (последний провал после начала предыдущего слова), если паузы перед словом нет; это правило check_cuts для начала посреди фразы. Тесты `test_envelope_*dip*`. На копии фикстуры: `dip_before = 7.38` для «помогает». Текст speech-safe-cuts не менялся: у файла предел 650 слов, объяснение в docstring скрипта.
 4. Куда класть `trailer.json`. → `SKILL.md`, шаг 2; `project-format.md`: `<проект>/_сборка/trailer.json`, клипы `../`.

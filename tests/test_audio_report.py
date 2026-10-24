@@ -58,3 +58,21 @@ def test_report_for_a_wav_has_the_time_axis(tmp_path, ffmpeg_ok):
     assert r.returncode == 0, r.stdout + r.stderr
     with Image.open(tmp_path / "audio_report.png") as im:
         assert im.size[1] > RAW_HEIGHT
+
+
+def test_annotate_report_draws_ticks_and_ids(tmp_path):
+    png = tmp_path / "r.png"
+    Image.new("RGB", (1600, 600)).save(png)
+    drawn = _module().annotate_report(png, 12.0, [("s00", 0.0), ("s01", 4.25)])
+    assert "5" in drawn and "10" in drawn
+    assert "s00" in drawn and "s01" in drawn
+    with Image.open(png) as im:
+        assert im.size == (1600, 600 + _module().STRIP)
+
+
+def test_empty_wav_is_an_error(tmp_path, ffmpeg_ok):
+    wavfile.write(tmp_path / "x.wav", 48000, np.zeros((0, 2), np.int16))
+    r = subprocess.run([sys.executable, str(SCRIPT), str(tmp_path / "x.wav")],
+                       capture_output=True, text=True)
+    assert r.returncode == 1
+    assert "error: empty audio" in r.stderr

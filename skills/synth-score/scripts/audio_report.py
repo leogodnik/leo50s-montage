@@ -33,8 +33,11 @@ def time_ticks(seconds: float) -> list[int]:
     return list(range(0, int(seconds) + 1, TICK_EVERY))
 
 
-def annotate_report(png, seconds: float, marks=()) -> None:
-    """Add the time axis and segment marks under the report picture, in place."""
+def annotate_report(png, seconds: float, marks=()) -> list[str]:
+    """Add the time axis and segment marks under the report picture, in place.
+
+    Returns the labels drawn: tick seconds, then segment ids.
+    """
     im = Image.open(png).convert("RGB")
     w, h = im.size
     out = Image.new("RGB", (w, h + STRIP), (0, 0, 0))
@@ -48,14 +51,26 @@ def annotate_report(png, seconds: float, marks=()) -> None:
     def x(t):
         return min(max(round(t / seconds * w), 0), w - 1)
 
+    drawn = []
     for t in time_ticks(seconds):
         d.line([(x(t), h), (x(t), h + 6)], fill=(200, 200, 200))
         d.text((x(t) + 2, h + 4), f"{t} s" if t == 0 else str(t), fill=(200, 200, 200), font=font)
+        drawn.append(str(t))
     for i, (sid, t) in enumerate(marks):
         y = h + 22 + (i % 2) * 18
         d.line([(x(t), h), (x(t), y + 14)], fill=(255, 200, 60))
         d.text((x(t) + 3, y), sid, fill=(255, 200, 60), font=font)
+        drawn.append(sid)
     out.save(png)
+    return drawn
+
+
+def audio_seconds(wav) -> float:
+    """Duration of the wav; 0.0 when ffprobe has none (an empty file)."""
+    try:
+        return ffm.duration(wav)
+    except ValueError:
+        return 0.0
 
 
 def main(argv):
@@ -75,12 +90,16 @@ def main(argv):
         out = pathlib.Path(a.out) if a.out else out
         if not wav.exists():
             raise FileNotFoundError(f"{wav} not found: run 'build.py <trailer.json> audio' first")
+        seconds = audio_seconds(wav)
+        if seconds <= 0:
+            print(f"error: empty audio: {wav}", file=sys.stderr)
+            return 1
         q = shlex.quote
         ffm.run(f"ffmpeg -v error -y -i {q(str(wav))} -filter_complex "
                 f"\"[0:a]asplit[a][b];[a]showspectrumpic=s=1600x400:legend=0:scale=log[s];"
                 f"[b]showwavespic=s=1600x200:colors=white[w];[s][w]vstack\" "
                 f"-frames:v 1 {q(str(out))}")
-        annotate_report(out, ffm.duration(wav), marks)
+        annotate_report(out, seconds, marks)
     except (ProjectError, ffm.FfmpegError, OSError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
