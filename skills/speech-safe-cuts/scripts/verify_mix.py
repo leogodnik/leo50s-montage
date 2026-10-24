@@ -18,6 +18,7 @@ from montagelib.timeline import timeline, visual_start  # noqa: E402
 from montagelib.words import inside, load_words  # noqa: E402
 
 EVENT_GAP = 0.12
+WIN = 0.02  # rms_db default window
 MATCH = 0.04  # a source syllable must reappear in the mix within this distance
 PUNCT = string.punctuation + "«»—–…"
 
@@ -26,9 +27,20 @@ def norm(text: str) -> list[str]:
     return [t.strip(PUNCT) for t in text.lower().split() if t.strip(PUNCT)]
 
 
+def mix_envelope(mono, sr, st, ss, win=WIN):
+    """Mix envelope on windows in phase with the source's (grid fixed to the clip start)."""
+    n = int(round(win * sr))
+    start = int(round(st * sr)) - int(round(ss * sr)) % n
+    start -= n * (-(-int(round(2 * MATCH * sr)) // n))  # room for the early match margin
+    while start < 0:
+        start += n
+    times, db = rms_db(mono[start:], sr, win)
+    return times + start / sr, db
+
+
 def check_envelope(p, tl, segs):
     """Return problem count; prints one line per segment."""
-    mt, mdb = rms_db(*read_mono(p.out_dir / "score.wav"))
+    mono, sr = read_mono(p.out_dir / "score.wav")
     events = [(s.id, visual_start(s, st) + (s.hit.get("offset") or 0)) for s, st in tl if s.hit]
     envs, problems = {}, 0
     for s, st in segs:
@@ -41,6 +53,7 @@ def check_envelope(p, tl, segs):
                 raise FileNotFoundError(f"wav/{s.src}.wav missing, run: build.py {p.path} wav")
             envs[s.src] = rms_db(*read_mono(wav))
         src = syllable_peaks(*envs[s.src], s.ss, s.ss + s.d)
+        mt, mdb = mix_envelope(mono, sr, st, s.ss)
         mix = syllable_peaks(mt, mdb, st - MATCH, st + s.d + MATCH)
         matched, lost = [], []
         for t in src:

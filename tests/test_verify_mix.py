@@ -16,15 +16,14 @@ ROOT = Path(__file__).resolve().parents[1]
 VERIFY = ROOT / "skills" / "speech-safe-cuts" / "scripts" / "verify_mix.py"
 
 
-@pytest.fixture
-def mixed(mini_project):
-    """Speech clip a (bursts 0.5-0.8, 1.2-1.5) laid into out/score.wav at its timeline start."""
+def _mix(mini_project, ss):
+    """Speech clip a (bursts 0.5-0.8, 1.2-1.5) from `ss` laid into out/score.wav at its start."""
     p = mini_project
     clip = ffm.make_test_clip(p.build_dir / "clips" / "a.mp4", 2.0, tone_hz=440,
                               bursts=[(0.5, 0.8), (1.2, 1.5)])
     ffm.extract_wav(clip, p.wav_dir / "a.wav")
     data = json.loads(p.path.read_text(encoding="utf-8"))
-    data["edl"][2].update(ss=0, d=1.9)
+    data["edl"][2].update(ss=ss, d=1.9)
     p.path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     p = load_project(p.path)
     tl, _ = timeline(p.edl, p.fps)
@@ -35,6 +34,11 @@ def mixed(mini_project):
     mix[i:i + n] = src[int(round(seg.ss * sr)):][:n]
     wavfile.write(p.out_dir / "score.wav", sr, mix)
     return p, start, sr
+
+
+@pytest.fixture
+def mixed(mini_project):
+    return _mix(mini_project, 0)
 
 
 def _verify(p):
@@ -59,3 +63,11 @@ def test_masked_syllable_fails(mixed):
     r = _verify(p)
     assert r.returncode == 1, r.stdout + r.stderr
     assert "syllable lost" in r.stdout
+
+
+def test_off_grid_segment_matches(mini_project):
+    # ss is not on the 20 ms grid: source and mix windows must still share the phase
+    p, _, _ = _mix(mini_project, 0.013)
+    r = _verify(p)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "peaks src/matched 2/2" in r.stdout
