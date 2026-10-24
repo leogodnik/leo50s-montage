@@ -111,3 +111,22 @@ def test_ov_bounds(tmp_path):
         load_project(_write(tmp_path, m))
     assert len(ei.value.problems) == 2
     assert all("ov" in p for p in ei.value.problems)
+
+
+def test_null_and_nonfinite_numbers(tmp_path):
+    def m(d):
+        d["edl"][1]["ov"] = None
+        d["edl"][2]["shake"] = None
+        d["edl"][3]["hit"] = {"type": "boom", "gain": float("nan")}
+    with pytest.raises(ProjectError) as ei:
+        load_project(_write(tmp_path, m))
+    problems = ei.value.problems
+    assert len(problems) == 3
+    msg = str(ei.value)
+    for needle in ("ov must be a number", "shake must be a number", "hit.gain"):
+        assert needle in msg
+
+
+def test_amb_null_is_allowed(tmp_path):
+    pr = load_project(_write(tmp_path, lambda d: d["edl"][2].update(amb=None)))
+    assert pr.by_id("s02").amb is None

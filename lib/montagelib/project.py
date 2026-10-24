@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
@@ -90,7 +91,7 @@ class Project:
 
 
 def _num(v) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
 def _font_exists(spec: str) -> bool:
@@ -187,7 +188,7 @@ def _parse_segment(i: int, e, aliases: set, ids: set, problems: list[str]) -> Op
     for key, default in (("ov", 0), ("ss", 0), ("shake", 1.0), ("duck", 0.5),
                          ("amb", None), ("fade_in", 0)):
         v = e.get(key, default)
-        if v is not None and not _num(v):
+        if not _num(v) and not (key == "amb" and v is None):
             problems.append(f"{label}: {key} must be a number, got {v!r}")
             v = default
         nums[key] = v
